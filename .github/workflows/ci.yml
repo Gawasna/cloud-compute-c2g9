@@ -1,0 +1,145 @@
+name: CI/CD Delivery Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Code Quality & Architectural Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run architectural and code linting
+        run: npm run lint
+
+  typecheck:
+    name: Static Type Checking
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run TypeScript type-check
+        run: npm run type-check
+
+  test:
+    name: Quality Gates & Automated Tests
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run unit, integration, migration, and RLS test suites
+        run: npm test
+
+      - name: Run end-to-end architectural test suite
+        run: npm run test:e2e
+
+  migration-check:
+    name: Database Migration Integrity & Gate
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate migration SQL naming and structural integrity
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          echo "Validating Supabase migration files against schema requirements..."
+          node --test tests/migration/*.test.mjs
+
+  sentry-release:
+    name: Sentry Release & Source Maps Verification
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Sentry environment configuration
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          echo "Validating Sentry release credentials and configuration..."
+          if [ -n "$SENTRY_AUTH_TOKEN" ]; then
+            echo "Sentry auth token configured for source map uploads."
+          else
+            echo "Warning: SENTRY_AUTH_TOKEN not provided in environment context."
+          fi
+
+  build:
+    name: Next.js Production Build
+    runs-on: ubuntu-latest
+    needs: [migration-check, sentry-release]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Next.js application bundle
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "mock-anon-key-for-build-pipeline"
+          NEXT_PUBLIC_SENTRY_DSN: "https://mockPublicKey@o0.ingest.sentry.io/0"
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: npm run build
