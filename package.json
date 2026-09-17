@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check:env": "node --no-warnings --experimental-strip-types scripts/health/check-local-env.ts",
+    "predev": "npm run check:env",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
