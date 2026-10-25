@@ -12,6 +12,5 @@ export interface DatabaseClient {
 export interface DatabaseConfig {
   databaseUrl: string;
   directUrl?: string;
-  directPoolerUrl?: string;
   poolSize?: number;
 }
