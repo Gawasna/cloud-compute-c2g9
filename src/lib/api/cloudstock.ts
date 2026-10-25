@@ -1,5 +1,5 @@
 import {getAccessToken} from '@/lib/auth/client';
-const BASE=(process.env.NEXT_PUBLIC_API_URL||'http://localhost:4000/api').replace(/\/$/,'');
+const BASE = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '');
 export interface ApiProduct {id:string;name:string;sku:string;category_id:string;unit_id:string;category_name:string;unit_symbol:string;cost_price:string|number;stock_quantity:number;minimum_stock:number}
 export interface ApiCategory {id:string;name:string}
 export interface ApiUnit {id:string;name:string;symbol:string}

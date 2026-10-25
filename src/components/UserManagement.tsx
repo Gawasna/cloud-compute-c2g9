@@ -13,11 +13,17 @@ export default function UserManagement({ownId}:{ownId:string}){
  const [message,setMessage]=useState('');
  const [showCreate,setShowCreate]=useState(false);
  const [form,setForm]=useState({displayName:'',email:'',password:'',role:'staff' as Role});
- const load=async()=>{setLoading(true);setError('');try{setRows(await apiRequest<UserRow[]>('/users'))}catch(e){setError(e instanceof Error?e.message:'Không tải được danh sách tài khoản')}finally{setLoading(false)}};
- useEffect(()=>{void load()},[]);
+ const reload=async()=>{setLoading(true);setError('');try{setRows(await apiRequest<UserRow[]>('/users'))}catch(e){setError(e instanceof Error?e.message:'Không tải được danh sách tài khoản')}finally{setLoading(false)}};
+ useEffect(()=>{
+  let active=true;
+  apiRequest<UserRow[]>('/users')
+   .then(data=>{if(!active)return;setRows(data);setLoading(false)})
+   .catch(e=>{if(!active)return;setError(e instanceof Error?e.message:'Không tải được danh sách tài khoản');setLoading(false)});
+  return ()=>{active=false};
+ },[]);
  const action=async (fn:()=>Promise<unknown>,success:string)=>{
   setSaving(true);setError('');setMessage('');
-  try{await fn();await load();setMessage(success)}catch(e){setError(e instanceof Error?e.message:'Thao tác không thành công')}finally{setSaving(false)}
+  try{await fn();await reload();setMessage(success)}catch(e){setError(e instanceof Error?e.message:'Thao tác không thành công')}finally{setSaving(false)}
  };
  const create=async(e:React.FormEvent)=>{
   e.preventDefault();

@@ -40,7 +40,29 @@ export default function Dashboard({identity}:{identity:Identity}){
   }catch(e){setDataError(e instanceof Error?e.message:'Không tải được dữ liệu. Vui lòng thử lại.');}
   finally{setLoading(false)}
  };
- useEffect(()=>{void refresh();},[role]);
+ useEffect(()=>{
+  let active=true;
+  Promise.all([
+   apiRequest<{items:ApiProduct[];total:number}>('/products?limit=100'),
+   apiRequest<ApiCategory[]>('/categories'),
+   apiRequest<ApiUnit[]>('/units'),
+   apiRequest<ApiDashboard>('/dashboard'),
+   role==='viewer'?Promise.resolve([] as ApiMovement[]):apiRequest<ApiMovement[]>('/movements?limit=100'),
+  ])
+   .then(([list,cats,measure,stats,moves])=>{
+    if(!active)return;
+    setProducts(list.items.map(mapProduct));setCategories(cats);setUnits(measure);
+    setDashboardStats(stats);setTransactions(moves.map(mapMovement));
+    if(list.total>list.items.length) setDataError(`Đang hiển thị ${list.items.length}/${list.total} sản phẩm. Cần bổ sung phân trang để xem hết.`);
+    setLoading(false);
+   })
+   .catch(e=>{
+    if(!active)return;
+    setDataError(e instanceof Error?e.message:'Không tải được dữ liệu. Vui lòng thử lại.');
+    setLoading(false);
+   });
+  return ()=>{active=false};
+ },[role]);
  const visible=useMemo(()=>products.filter(p=>(p.name+' '+p.sku+' '+p.category).toLowerCase().includes(search.toLowerCase())&&(filter==='Tất cả'||stockLabel(p)===filter)),[products,search,filter]);
  const low=products.filter(p=>p.stock>0&&p.stock<p.minimum).length, out=products.filter(p=>p.stock===0).length;
  const total=products.reduce((s,p)=>s+p.stock,0),value=products.reduce((s,p)=>s+p.stock*p.price,0);

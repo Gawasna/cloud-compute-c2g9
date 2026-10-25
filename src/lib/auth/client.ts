@@ -5,7 +5,7 @@ type Session = { access_token: string; refresh_token: string; expires_at: number
 const storageKey = 'cloudstock-auth-session-v1';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') || '';
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:4000/api';
+const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || '/api';
 
 function requireConfig() {
   if (!supabaseUrl || !anonKey || supabaseUrl.includes('your-project-ref')) {
@@ -70,7 +70,7 @@ export async function getIdentity(): Promise<Identity | null> {
   });
   if (response.status === 401) { clearSession(); return null; }
   if (response.status === 403) throw new Error('Tài khoản chưa được cấp vai trò trong bảng profiles.');
-  if (!response.ok) throw new Error(`Không xác minh được vai trò từ NestJS (HTTP ${response.status}). Kiểm tra Backend.`);
+  if (!response.ok) throw new Error(`Không xác minh được vai trò từ máy chủ (HTTP ${response.status}).`);
   const data: { id: string; role: Role } = await response.json();
   if (!['admin', 'staff', 'viewer'].includes(data.role)) throw new Error('Vai trò tài khoản không hợp lệ.');
   return { ...data, email: current()?.email || '' };
