@@ -1,42 +1,57 @@
-# dependencies
-/node_modules
-/.pnp
+# =========================================
+# CLOUDSTOCK - GITIGNORE
+# =========================================
+
+# Dependencies
+node_modules/
+**/node_modules/
+.pnp
 .pnp.js
 
-# testing
-/coverage
+# Testing
+coverage/
+**/coverage/
 
-# next.js
-/.next/
-/out/
+# Next.js
+.next/
+out/
+build/
 
-# production
-/build
+# NestJS Backend
+backend/dist/
+**/dist/
 
-# misc
-.DS_Store
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local certificates and secrets
+backend/certs/
 *.pem
+*.key
+*.p12
+*.pfx
 
-# debug logs
+# Debug logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files (STRICTLY FORBIDDEN FROM REPO)
-.env*.local
-.env
-.env.development
-.env.test
-.env.production
+# Vercel
+.vercel/
 
-# vercel
-.vercel
-
-# typescript
+# TypeScript
 *.tsbuildinfo
 next-env.d.ts
 
-# local
+# OS
+.DS_Store
+Thumbs.db
+
+# Local agent files
 .agents/
 docs/
 skills-lock.json
