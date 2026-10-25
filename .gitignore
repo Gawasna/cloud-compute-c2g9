@@ -40,3 +40,11 @@ next-env.d.ts
 .agents/
 docs/
 skills-lock.json
+
+# Local Multi-Agent Worktrees
+.worktrees/
+
+# Bernstein Orchestrator Runtime
+.sdd/
+trace/
+**.md
