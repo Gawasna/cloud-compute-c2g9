@@ -1,0 +1,364 @@
+@startuml Master_FullDepth_v1_Relayout
+title Master Diagram v1 — deployment-safe DB evolution, free-tier reality (no custom domain) + Bugsink side sink
+
+' Layout principle: the request path reads left-to-right.  Delivery, monitoring,
+' and human actions live above/below it so they do not cut through the core flow.
+left to right direction
+skinparam backgroundColor #FEFEFE
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 28
+skinparam ranksep 42
+skinparam shadowing false
+' Quiet by default: only primary operational paths receive a strong colour.
+skinparam ArrowColor #94A3B8
+skinparam ArrowFontColor #64748B
+skinparam ArrowThickness 1
+skinparam component {
+  BackgroundColor<<human>> #FFECB3
+  BackgroundColor<<dns>> #ECEFF1
+  BackgroundColor<<security>> #FFEBEE
+  BackgroundColor<<cicd>> #FFF3E0
+  BackgroundColor<<source>> #FFF9C4
+  BackgroundColor<<cache>> #FFF8E1
+  BackgroundColor<<vercel>> #E1F5FE
+  BackgroundColor<<supabase>> #E8F5E9
+  BackgroundColor<<external>> #FCE4EC
+  BackgroundColor<<trace>> #D1C4E9
+  BackgroundColor<<cost>> #F1F8E9
+  BackgroundColor<<viz>> #EDE7F6
+  BackgroundColor<<alert>> #FFCDD2
+  BackgroundColor<<incident>> #FFCCBC
+  BackgroundColor<<selfhost>> #E0F7FA
+  BorderColor Black
+}
+
+' ======================= REQUEST PATH (top row) =======================
+package "01 · People / engineering team" <<human>> {
+  actor "End User" as User
+  actor "Partner Developer\n(collaborator)" as Partner
+}
+
+package "02 · Edge" <<dns>> {
+  component "Vercel domain / DNS\n(*.vercel.app · no custom domain)" as DNS <<dns>>
+  component "Vercel Firewall\n(Hobby: 3 custom rules)" as WAF <<security>>
+  component "Rate Limiting\n(Hobby: 1 rule / project)" as RateLimit <<security>>
+  component "Bot Management" as BotMgmt <<security>>
+}
+
+package "03 · Next.js / Vercel runtime" <<source>> {
+  component "Middleware\nEdge Runtime" as Middleware <<source>>
+  component "Server Components\nNode.js" as RSC <<source>>
+  component "Client Components\nBrowser" as CSR <<source>>
+  component "Route Handlers\nNode.js" as RouteHandler <<source>>
+  component "Server Actions\nNode.js" as ServerAction <<source>>
+}
+
+package "04 · Cache & KV" <<cache>> {
+  component "Vercel Edge Cache" as EdgeCache <<cache>>
+  component "ISR Cache" as ISRCache <<cache>>
+  component "Fetch Data Cache" as FetchCache <<cache>>
+  component "Vercel KV" as VercelKV <<cache>>
+  component "Upstash Redis" as Upstash <<cache>>
+}
+
+package "05 · Supabase data" <<supabase>> {
+  component "Supavisor\nPooler" as Supavisor <<supabase>>
+  component "Supabase Postgres" as SupaDB <<supabase>>
+  component "Backup / PITR\n(Free: db dump off-site;\nPITR = paid add-on)" as SupaBackup <<supabase>>
+}
+
+User -[#2563EB]-> DNS : resolve
+DNS -[#2563EB]-> WAF
+WAF -[#2563EB]-> RateLimit
+RateLimit -[#2563EB]-> BotMgmt
+BotMgmt -[#2563EB]-> Middleware
+Middleware -[#2563EB]-> RSC
+User -[#2563EB]-> CSR
+CSR -[#2563EB]-> RouteHandler
+CSR -[#2563EB]-> ServerAction
+RSC -[#0F766E]-> ISRCache
+RSC -[#0F766E]-> FetchCache
+RouteHandler -[#0F766E]-> VercelKV : GET / SET (HTTP REST)
+VercelKV .[#0F766E,dashed].> Upstash : same service / rebrand
+EdgeCache -[#0F766E]-> User : cached response
+RouteHandler -[#0F766E]-> Supavisor
+ServerAction -[#0F766E]-> Supavisor
+VercelKV .[#0F766E,dashed].> Supavisor : cache-aside
+Supavisor -[#0F766E]-> SupaDB
+SupaDB -[#0F766E]-> SupaBackup
+
+' Keep functional clusters internally compact and in an intentional order.
+WAF -[hidden]-> RateLimit
+RateLimit -[hidden]-> BotMgmt
+Middleware -[hidden]-> RSC
+RSC -[hidden]-> CSR
+CSR -[hidden]-> RouteHandler
+RouteHandler -[hidden]-> ServerAction
+ISRCache -[hidden]-> FetchCache
+FetchCache -[hidden]-> VercelKV
+VercelKV -[hidden]-> Upstash
+
+' ======================= DELIVERY (above the runtime) =======================
+package "Delivery · CI/CD" <<cicd>> {
+  actor "Owner Dev" as Owner
+  component "GitHub Repo" as GitHub <<cicd>>
+  component "Vercel Build\nSystem" as VercelBuild <<cicd>>
+  component "Preview\nDeployment" as Preview <<cicd>>
+  component "Production\nDeployment" as Prod <<cicd>>
+  component "Environment\nVariables" as EnvVars <<cicd>>
+}
+
+Owner -[#D97706]-> GitHub : git push
+Partner -[#D97706]-> GitHub : PR / review / push
+GitHub -[#D97706]-> VercelBuild : webhook
+VercelBuild -[#D97706]-> Preview : branch
+VercelBuild -[#D97706]-> Prod : merge main
+EnvVars -[#D97706]-> Preview
+EnvVars -[#D97706]-> Prod
+Prod -[hidden]down-> Middleware
+
+' ======================= DEPLOYMENT SAFETY =======================
+' Schema evolution is a separate release concern. A code rollback must not rely
+' on undoing production DDL after data has been written.
+package "Delivery · schema evolution (Expand → Contract)" <<cicd>> {
+  component "Versioned migration files\n(supabase/migrations)" as SchemaRepo <<cicd>>
+  component "Migration gate\n(expand-only release)" as MigrationGate <<cicd>>
+  component "Compatibility gate\ncode N-1 ↔ schema N" as CompatGate <<security>>
+  component "Feature flag" as FeatureFlag <<source>>
+  component "Backfill + validation\n(chunked, resumable)" as Backfill <<source>>
+  component "Contract approval\n(old code retired + backup verified)" as ContractGate <<incident>>
+}
+
+GitHub -[#D97706]-> SchemaRepo : commit migration with code
+SchemaRepo -[#D97706]-> MigrationGate : review + test
+MigrationGate -[#D97706]-> CompatGate : prove compatibility
+CompatGate -[#D97706]-> Prod : permit deploy
+MigrationGate -[#D97706]-> SupaDB : forward-only expand
+MigrationGate -[#D97706]-> Backfill
+Backfill -[#D97706]-> SupaDB : copy / validate data
+FeatureFlag -[#D97706]-> RouteHandler : enable new path
+FeatureFlag -[#D97706]-> ServerAction : enable new write
+Backfill -[#D97706]-> ContractGate : validation complete
+SupaBackup -[#D97706]-> ContractGate : recovery point verified
+ContractGate -[#BE123C]-> SupaDB : later: destructive contract
+
+' ======================= SECURITY & RECOVERY GUARDRAILS =======================
+package "Guardrails · data access & recovery" <<security>> {
+  component "RLS policy gate\n(policy + regression tests)" as RLSGate <<security>>
+  component "Service-role boundary\nserver-only credential" as ServiceRole <<security>>
+  component "Secret classification\nbrowser-safe vs server-only" as SecretClass <<security>>
+  component "Restore drill\n(isolated target)" as RestoreDrill <<incident>>
+  component "Measured RPO / RTO" as RecoveryTarget <<incident>>
+}
+
+SchemaRepo -[#BE123C]-> RLSGate : version policy changes
+RLSGate -[#BE123C]-> MigrationGate : policy test passes
+RLSGate -[#BE123C]-> SupaDB : enforce row access
+EnvVars -[#BE123C]-> SecretClass : classify at release
+SecretClass -[#BE123C]-> ServiceRole : server-only injection
+ServiceRole -[#BE123C]-> Supavisor : privileged server path
+SupaBackup -[#BE123C]-> RestoreDrill : scheduled restore test
+RestoreDrill -[#BE123C]-> RecoveryTarget : record actual recovery
+RecoveryTarget -[#BE123C]-> ContractGate : recovery evidence
+
+' ======================= TELEMETRY (below the runtime) =======================
+package "Telemetry · built-in signals" {
+  component "Vercel Runtime Logs" as VLogs <<vercel>>
+  component "Vercel Speed Insights" as VSpeed <<vercel>>
+  component "Supabase Log Explorer" as SupaLogExp <<supabase>>
+  component "Supabase Reports" as SupaReports <<supabase>>
+}
+
+package "Telemetry · tracing & errors" <<trace>> {
+  component "Vercel OTel" as VercelOTel <<trace>>
+  component "Trace Context\nHeader" as TraceCtx <<trace>>
+  component "Instrumentation.ts" as Instrumentation <<external>>
+  component "Multiplexed transport\nstrict → Sentry · loose → Bugsink" as MuxTransport <<external>>
+  component "Sentry.io" as SentryCloud <<external>>
+}
+
+' Self-hosted side sink. Declared before any edge that references these aliases.
+package "Self-hosted · HP EliteDesk (reached via Tailscale)" <<selfhost>> {
+  component "Tailscale Funnel\n:443 · public *.ts.net\n(ingest only)" as Funnel <<dns>>
+  component "Reverse proxy (Caddy / nginx)\nallowlist ingest paths + rate limit" as IngestProxy <<security>>
+  component "Bugsink\n(Docker · 127.0.0.1)" as Bugsink <<selfhost>>
+  component "Bugsink data\n+ off-host backup" as BugsinkStore <<selfhost>>
+  component "Tailscale Serve\n:8443 · tailnet-only" as TSServe <<dns>>
+}
+
+Middleware -[#7C3AED]-> VLogs
+RouteHandler -[#7C3AED]-> VLogs
+ServerAction -[#7C3AED]-> VLogs
+CSR -[#7C3AED]-> VSpeed
+Supavisor -[#7C3AED]-> SupaLogExp
+SupaDB -[#7C3AED]-> SupaReports
+Middleware -[#7C3AED]-> VercelOTel
+RSC -[#7C3AED]-> VercelOTel
+Supavisor -[#7C3AED]-> VercelOTel
+VercelOTel -[#7C3AED]-> TraceCtx
+VercelOTel -[#7C3AED]-> Instrumentation
+CSR -[#7C3AED]-> Instrumentation
+Instrumentation -[#7C3AED]-> MuxTransport : every captured event
+MuxTransport -[#7C3AED,bold]-> SentryCloud : strict subset (quota-safe)
+MuxTransport -[#7C3AED]-> Funnel : all errors (loose rules)
+Funnel -[#7C3AED]-> IngestProxy : :443
+IngestProxy -[#7C3AED]-> Bugsink : ingest paths only
+Bugsink -[#7C3AED]-> BugsinkStore
+
+' ======================= OPERATIONS (right-side outcome) =======================
+package "Operations · heartbeat & cost" <<external>> {
+  component "GitHub Actions\nCron" as GHAction <<external>>
+  component "EliteDesk Cron\n(systemd)" as EliteCron <<external>>
+  component "Health Endpoint" as HealthEP <<external>>
+  component "Uptime Kuma /\nBetter Stack" as UptimeStore <<external>>
+  component "Vercel Usage\nDashboard" as VercelUsage <<cost>>
+  component "Supabase Usage\nDashboard" as SupaUsage <<cost>>
+  component "Usage Alert" as UsageAlert <<cost>>
+}
+
+Owner --> EliteCron : one-time setup
+GHAction --> HealthEP : every 10–15 min
+EliteCron --> HealthEP : every 1 min
+HealthEP --> Supavisor : DB ping
+GHAction --> UptimeStore : result
+EliteCron --> UptimeStore : result
+VercelBuild --> VercelUsage
+RouteHandler --> VercelUsage
+SupaDB --> SupaUsage
+VercelUsage --> UsageAlert
+SupaUsage --> UsageAlert
+
+' Declare response actors before any watch signal routes to Telegram. PlantUML
+' otherwise auto-creates the alias on its first reference and rejects this later declaration.
+package "Operations · alert & response" <<incident>> {
+  component "Sentry Alert\nRules" as SentryAlert <<alert>>
+  component "Telegram Bot" as TeleBot <<alert>>
+  actor "On-call\nResponder" as OnCall
+  component "Runbook" as Runbook <<incident>>
+  component "Vercel Rollback" as Rollback <<incident>>
+}
+
+Runbook -[#DC2626]-> ContractGate : explicit approval
+
+' ======================= WATCHABILITY (signals that require ownership) =======================
+package "Operations · To-Watch register" <<alert>> {
+  component "Release ID /\nversion tag" as ReleaseTag <<trace>>
+  component "Migration lock +\nduration watch" as MigrationWatch <<alert>>
+  component "Pool saturation +\nslow-query watch" as ConnectionWatch <<alert>>
+  component "Cache hit / memory /\nkey-cardinality watch" as CacheWatch <<alert>>
+  component "Alert routing +\ndeduplication" as AlertRouter <<alert>>
+  component "To-Watch register\nP0 · P1 · P2 + owner" as WatchRegister <<alert>>
+}
+
+VercelBuild --> ReleaseTag : attach deploy version
+ReleaseTag --> VLogs : correlate logs
+ReleaseTag --> SentryCloud : correlate errors
+MigrationGate --> MigrationWatch : lock / duration
+Supavisor --> ConnectionWatch
+SupaDB --> ConnectionWatch
+VercelKV --> CacheWatch
+MigrationWatch -[#DC2626]-> AlertRouter
+ConnectionWatch -[#DC2626]-> AlertRouter
+CacheWatch -[#DC2626]-> AlertRouter
+AlertRouter -[#DC2626]-> TeleBot : page actionable events
+MigrationWatch --> WatchRegister
+ConnectionWatch --> WatchRegister
+CacheWatch --> WatchRegister
+Owner --> WatchRegister : weekly review / assign owner
+Partner --> WatchRegister : contribute remediation
+
+SentryCloud -[#DC2626]-> SentryAlert
+UptimeStore -[#DC2626]-> TeleBot
+SentryAlert -[#DC2626]-> TeleBot : email / webhook*
+UsageAlert -[#DC2626]-> TeleBot
+TeleBot -[#DC2626]-> OnCall : notify
+OnCall -[#DC2626]-> Runbook : decide
+Runbook -[#DC2626]-> Rollback : bad deploy
+
+' ======================= DASHBOARDS (single, clean sink) =======================
+package "Dashboards · human view" <<viz>> {
+  component "Vercel Dashboard" as VD <<viz>>
+  component "Supabase Dashboard" as SD <<viz>>
+  component "Sentry Dashboard" as SED <<viz>>
+  component "Bugsink Dashboard\n(tailnet-only)" as BGD <<viz>>
+  component "Uptime Kuma UI" as UD <<viz>>
+}
+
+VLogs --> VD
+VSpeed --> VD
+VercelUsage --> VD
+SupaLogExp --> SD
+SupaReports --> SD
+SupaUsage --> SD
+SentryCloud --> SED
+Bugsink --> TSServe : dashboard
+TSServe --> BGD
+UptimeStore --> UD
+Owner --> VD : routine review
+Owner --> SD
+Owner --> SED
+Owner --> BGD : Tailscale client
+Partner --> VD : observe release health
+Partner --> SD : investigate data / logs
+
+note bottom of WAF
+  Blocks bad requests before they reach code.
+end note
+note bottom of VercelBuild
+  Automatic build from the GitHub webhook.
+end note
+note bottom of TraceCtx
+  One trace ID spans middleware, app, and DB.
+end note
+note bottom of UptimeStore
+  Two independent watchers reduce a single point of failure.
+end note
+note bottom of Runbook
+  Human-approved rollback; never fully automatic.
+end note
+note bottom of DNS
+  No custom domain: Cloudflare DNS / Tunnel / Access are not used.
+  The Cloudflare free account is only an optional Workers + Queues relay.
+end note
+note bottom of SentryAlert
+  * Developer (free) plan: email alerts are confirmed; webhook / integrations
+  must be verified after the 14-day Business trial ends.
+  Fallback: email → small parser on EliteDesk → Telegram.
+end note
+note bottom of MuxTransport
+  Strict rules live in the matcher, not beforeSend (matcher runs after beforeSend).
+  Send traces / replays to Sentry only; Bugsink accepts errors only.
+end note
+note bottom of Funnel
+  Needs MagicDNS + HTTPS certs + "funnel" nodeAttr. Ports 443 / 8443 / 10000 only.
+  Non-configurable bandwidth cap; no auth layer. A port is Serve (private) or Funnel (public).
+  Test from mobile data: a tailnet device reaches the host directly, not via the relay.
+end note
+note bottom of Bugsink
+  Independent demo backend; loose rules; no tracing or replay.
+  Retention is count-based (no 30-day cutoff). Alert channels on self-hosted: verify.
+  BASE_URL = public Funnel URL; check allowed-hosts / CSRF for the :8443 dashboard.
+end note
+note bottom of CompatGate
+  Roll back code safely only while the old version can still read/write
+  the expanded schema. Never deploy destructive DDL with its first use.
+end note
+
+legend right
+  <b>Reading order</b>
+  1. Request: People → Edge → Runtime → Cache / Data
+  2. Delivery is above; telemetry is below the runtime
+  3. Operations and dashboards are the right-side outcomes
+  4. Free-tier caveats are marked by notes (DNS, Sentry Alert, Funnel, Bugsink, Backup)
+  ----
+  <b>Line colours</b>
+  <color:#2563EB>Blue</color>: request path
+  <color:#0F766E>Teal</color>: cache / data path
+  <color:#D97706>Amber</color>: delivery / schema evolution
+  <color:#7C3AED>Purple</color>: telemetry / tracing
+  <color:#BE123C>Wine</color>: security / recovery guardrail
+  <color:#DC2626>Red</color>: actionable alert / incident
+  Grey: contextual / dashboard relationship
+endlegend
+@enduml
