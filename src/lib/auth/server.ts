@@ -21,17 +21,28 @@ export class ApiError extends Error {
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_REGEX.test(value.trim());
+}
+
+const globalForAuth = globalThis as unknown as { __supabaseAdmin: SupabaseClient | undefined };
+
 export function getSupabaseAdminClient(): SupabaseClient {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!globalForAuth.__supabaseAdmin) {
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !serviceKey) {
-    throw new ApiError(500, "Chưa cấu hình dịch vụ quản lý tài khoản (SUPABASE_SERVICE_ROLE_KEY).");
+    if (!url || !serviceKey) {
+      throw new ApiError(500, "Chưa cấu hình dịch vụ quản lý tài khoản (SUPABASE_SERVICE_ROLE_KEY).");
+    }
+
+    globalForAuth.__supabaseAdmin = createClient(url, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
   }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  return globalForAuth.__supabaseAdmin;
 }
 
 export async function authenticateUser(request: Request): Promise<AuthUser> {
@@ -90,11 +101,24 @@ export function handleApiError(error: unknown): NextResponse {
     return NextResponse.json({ message: error.message }, { status: error.statusCode });
   }
 
-  const err = error as { code?: string; message?: string };
-  if (err.code === "23505") {
-    return NextResponse.json({ message: "Dữ liệu bị trùng lặp (SKU hoặc mã đã tồn tại)." }, { status: 409 });
+  if (error instanceof Error) {
+    const pgError = error as Error & { code?: string };
+    if (pgError.code === "23505") {
+      return NextResponse.json(
+        { message: "Dữ liệu bị trùng lặp (SKU hoặc mã đã tồn tại)." },
+        { status: 409 }
+      );
+    }
+    if (pgError.code === "23503") {
+      return NextResponse.json(
+        { message: "Dữ liệu đang được liên kết bởi bản ghi khác hoặc tham chiếu không hợp lệ." },
+        { status: 409 }
+      );
+    }
+
+    const message = pgError.message || "Lỗi máy chủ nội bộ";
+    return NextResponse.json({ message }, { status: 500 });
   }
 
-  const message = err.message || "Lỗi máy chủ nội bộ";
-  return NextResponse.json({ message }, { status: 500 });
+  return NextResponse.json({ message: "Lỗi máy chủ nội bộ" }, { status: 500 });
 }

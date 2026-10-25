@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError, ApiError } from "@/lib/auth/server";
+import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid } from "@/lib/auth/server";
 import { query, withTransaction } from "@/lib/db/client";
 
 export async function GET(request: Request) {
@@ -37,8 +37,8 @@ export async function POST(request: Request) {
     const quantity = Number(body.quantity);
     const note = body.note ? String(body.note).trim() : null;
 
-    if (!productId) {
-      throw new ApiError(400, "Mã sản phẩm không hợp lệ");
+    if (!productId || !isValidUuid(productId)) {
+      throw new ApiError(400, "Mã sản phẩm không hợp lệ (yêu cầu định dạng UUID)");
     }
     if (type !== "IN" && type !== "OUT") {
       throw new ApiError(400, "Loại biến động phải là IN hoặc OUT");

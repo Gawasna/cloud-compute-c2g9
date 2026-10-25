@@ -38,15 +38,18 @@ export async function GET(request: Request) {
     const admin = getSupabaseAdminClient();
     const emails = new Map<string, string>();
 
-    for (let page = 1; page <= 20; page++) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
-      if (error) {
-        throw new ApiError(500, "Không tải được danh sách tài khoản từ Auth Service");
+    if (rowsRes.rows.length > 0) {
+      for (let page = 1; page <= 10; page++) {
+        const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+        if (error) {
+          throw new ApiError(500, "Không tải được danh sách tài khoản từ Auth Service");
+        }
+        for (const u of data.users) {
+          emails.set(u.id, u.email || "");
+        }
+        const allMapped = rowsRes.rows.every((row) => emails.has(row.id));
+        if (allMapped || data.users.length < 1000) break;
       }
-      for (const u of data.users) {
-        emails.set(u.id, u.email || "");
-      }
-      if (data.users.length < 1000) break;
     }
 
     const result = rowsRes.rows.map((row) => ({

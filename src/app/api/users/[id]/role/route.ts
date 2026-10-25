@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError, ApiError, type Role } from "@/lib/auth/server";
+import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid, type Role } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
 export async function PATCH(
@@ -12,6 +12,9 @@ export async function PATCH(
     requireRoles(user, ["admin"]);
 
     const { id } = await params;
+    if (!isValidUuid(id)) {
+      throw new ApiError(400, "Mã tài khoản không hợp lệ (yêu cầu định dạng UUID)");
+    }
     if (user.id === id) {
       throw new ApiError(400, "Không thể tự đổi vai trò");
     }

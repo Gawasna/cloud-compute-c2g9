@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
-let poolInstance: Pool | null = null;
+const globalForDb = globalThis as unknown as { __dbPool: Pool | undefined };
 
 function getCertificate(): string | undefined {
   const certPath = process.env.DATABASE_SSL_CA_PATH || "certs/prod-ca-2021.crt";
@@ -17,23 +17,24 @@ function getCertificate(): string | undefined {
 }
 
 export function getDbPool(): Pool {
-  if (!poolInstance) {
+  if (!globalForDb.__dbPool) {
     const ca = getCertificate();
     const connectionString = process.env.DATABASE_URL;
+    const maxPool = Math.max(1, Number(process.env.DATABASE_POOL_SIZE) || 5);
 
-    poolInstance = new Pool({
+    globalForDb.__dbPool = new Pool({
       connectionString,
       ssl: ca
         ? { ca, rejectUnauthorized: true }
         : connectionString && connectionString.includes("sslmode=require")
           ? { rejectUnauthorized: false }
           : undefined,
-      max: 5,
+      max: maxPool,
       idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 5000,
     });
   }
-  return poolInstance;
+  return globalForDb.__dbPool;
 }
 
 export async function query<T extends QueryResultRow = QueryResultRow>(

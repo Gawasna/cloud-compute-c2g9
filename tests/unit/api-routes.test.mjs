@@ -95,4 +95,67 @@ describe("Unit: Next.js API Route Handlers Integrity & Security", () => {
       "apiUrl in client.ts must default to /api"
     );
   });
+
+  it("should ensure globalThis singleton pattern in db client and auth admin client", () => {
+    const dbClient = readFileSync(
+      resolve(process.cwd(), "src/lib/db/client.ts"),
+      "utf8"
+    );
+    assert.ok(
+      dbClient.includes("globalThis as unknown as { __dbPool: Pool | undefined }"),
+      "db client must use globalThis singleton to prevent HMR connection leak"
+    );
+    assert.ok(
+      dbClient.includes("DATABASE_POOL_SIZE"),
+      "db client must support configurable DATABASE_POOL_SIZE"
+    );
+
+    const authServer = readFileSync(
+      resolve(process.cwd(), "src/lib/auth/server.ts"),
+      "utf8"
+    );
+    assert.ok(
+      authServer.includes("globalThis as unknown as { __supabaseAdmin: SupabaseClient | undefined }"),
+      "auth server must use globalThis singleton for getSupabaseAdminClient"
+    );
+  });
+
+  it("should verify UUID validation helper and error code mappings in auth server", () => {
+    const authServer = readFileSync(
+      resolve(process.cwd(), "src/lib/auth/server.ts"),
+      "utf8"
+    );
+    assert.ok(
+      authServer.includes("export function isValidUuid"),
+      "auth server must export isValidUuid validator"
+    );
+    assert.ok(
+      authServer.includes('"23505"'),
+      "handleApiError must map PostgreSQL unique violation 23505 to 409"
+    );
+    assert.ok(
+      authServer.includes('"23503"'),
+      "handleApiError must map PostgreSQL foreign key violation 23503 to 409"
+    );
+  });
+
+  it("should verify routes enforce isValidUuid for UUID identifiers", () => {
+    const productRoute = readFileSync(
+      resolve(process.cwd(), "src/app/api/products/route.ts"),
+      "utf8"
+    );
+    assert.ok(
+      productRoute.includes("isValidUuid(categoryId)") && productRoute.includes("isValidUuid(unitId)"),
+      "products route must validate categoryId and unitId UUID format"
+    );
+
+    const movementRoute = readFileSync(
+      resolve(process.cwd(), "src/app/api/movements/route.ts"),
+      "utf8"
+    );
+    assert.ok(
+      movementRoute.includes("isValidUuid(productId)"),
+      "movements route must validate productId UUID format"
+    );
+  });
 });

@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError, ApiError } from "@/lib/auth/server";
+import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
 export async function GET(request: Request) {
@@ -55,8 +55,8 @@ export async function POST(request: Request) {
     if (!sku || sku.length > 40) {
       throw new ApiError(400, "Mã SKU không hợp lệ (tối đa 40 ký tự)");
     }
-    if (!categoryId || !unitId) {
-      throw new ApiError(400, "Thiếu danh mục hoặc đơn vị tính");
+    if (!categoryId || !unitId || !isValidUuid(categoryId) || !isValidUuid(unitId)) {
+      throw new ApiError(400, "Danh mục hoặc đơn vị tính không hợp lệ (yêu cầu định dạng UUID)");
     }
     if (isNaN(costPrice) || costPrice < 0) {
       throw new ApiError(400, "Giá vốn phải lớn hơn hoặc bằng 0");
@@ -65,18 +65,11 @@ export async function POST(request: Request) {
       throw new ApiError(400, "Định mức tồn tối thiểu phải là số nguyên không âm");
     }
 
-    try {
-      const res = await query(
-        "insert into public.products(name, sku, category_id, unit_id, cost_price, minimum_stock) values($1, $2, $3, $4, $5, $6) returning *",
-        [name, sku, categoryId, unitId, costPrice, minimumStock]
-      );
-      return NextResponse.json(res.rows[0], { status: 201 });
-    } catch (e) {
-      if ((e as { code?: string }).code === "23505") {
-        throw new ApiError(409, "SKU trùng");
-      }
-      throw e;
-    }
+    const res = await query(
+      "insert into public.products(name, sku, category_id, unit_id, cost_price, minimum_stock) values($1, $2, $3, $4, $5, $6) returning *",
+      [name, sku, categoryId, unitId, costPrice, minimumStock]
+    );
+    return NextResponse.json(res.rows[0], { status: 201 });
   } catch (error) {
     return handleApiError(error);
   }
