@@ -1,3 +1,49 @@
+# CloudStock — Hệ thống quản lý kho trên Cloud
+
+CloudStock là ứng dụng quản lý kho bằng **Next.js (frontend)**, **NestJS (REST API)** và **Supabase (PostgreSQL + Authentication)**. Giao diện sử dụng tiếng Việt, hỗ trợ 3 vai trò: **Quản trị viên**, **Nhân viên kho**, **Người xem báo cáo**.
+
+## Bắt đầu nhanh
+
+1. Chạy lần lượt các migration trong `supabase/migrations/` theo tên tăng dần. Nếu đã chạy migration Giai đoạn 4, chỉ chạy migration mới `20261025000001_user_management.sql`.
+2. Giữ file `backend/.env` tại máy cá nhân, cấu hình `DATABASE_URL`, `DATABASE_SSL_CA_PATH` (nếu cần), `SUPABASE_URL`, `SUPABASE_ANON_KEY`, **`SUPABASE_SERVICE_ROLE_KEY`** (server-only) và `FRONTEND_ORIGIN=http://localhost:3000`.
+3. Giữ `.env.local` tại thư mục gốc với `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL=http://localhost:4000/api`.
+4. Terminal 1: `cd backend && npm install && npm run dev`.
+5. Terminal 2 tại thư mục gốc: `npm install && npm run dev`. Truy cập `http://localhost:3000/login`.
+
+> **Bảo mật:** Tuyệt đối không đưa mật khẩu database, Supabase service role key, `.env`, `.env.local` hay chứng chỉ cá nhân lên Git. Chỉ dùng service role key trong `backend/.env`, không đặt tên biến bắt đầu bằng `NEXT_PUBLIC_`.
+
+## Giai đoạn 5 — Quản lý tài khoản nhân viên
+
+Trong mục **Người dùng** (chỉ Admin), có thể:
+- Xem danh sách tên, email, vai trò, trạng thái và ngày tạo.
+- Tạo tài khoản nhân viên mới, đặt mật khẩu ban đầu (ít nhất 10 ký tự).
+- Đổi vai trò `admin`, `staff`, `viewer`.
+- Khóa/mở khóa tài khoản. Khi khóa, NestJS từ chối cả phiên hiện có và Supabase Auth chặn đăng nhập mới.
+- Không tự đổi vai trò hoặc tự khóa/mở khóa tài khoản của chính mình.
+
+API NestJS: `GET /api/users`, `POST /api/users`, `PATCH /api/users/:id/role`, `PATCH /api/users/:id/status`. Tất cả đều cần `Authorization: Bearer <token>` của Admin. Dịch vụ tạo người dùng sử dụng Supabase Admin API phía server; không đưa `service_role` cho browser.
+
+### Triển khai migration Giai đoạn 5
+
+Chạy `supabase/migrations/20261025000001_user_management.sql` trong SQL Editor một lần. Lệnh thêm cột `profiles.is_active BOOLEAN NOT NULL DEFAULT true`, không xóa 3 tài khoản và 30 sản phẩm hiện có. Đảm bảo máy Backend đã nạp `SUPABASE_SERVICE_ROLE_KEY` hợp lệ, sau đó khởi động lại Backend.
+
+### Kiểm thử Giai đoạn 5
+
+1. Admin xem danh sách 3 tài khoản cũ; email và vai trò hiển thị đúng.
+2. Admin tạo tài khoản Staff mới, đăng nhập thành công.
+3. Admin đổi vai trò Staff sang Viewer; sau tải lại, Viewer không thể nhập/xuất.
+4. Admin khóa một tài khoản phụ; đăng nhập mới không được và token cũ bị NestJS từ chối.
+5. Admin mở khóa tài khoản; đăng nhập được trở lại.
+6. Staff/Viewer gọi `GET /api/users` hoặc `POST /api/users` phải nhận HTTP 403.
+7. Admin không thể đổi vai trò hoặc khóa tài khoản chính mình.
+8. Chứng minh `profiles.is_active` được cập nhật và nhật ký kho cũ vẫn còn `performed_by` UUID để truy vết.
+
+**Lưu ý:** Đây là chức năng quản lý nội bộ cho đồ án; chưa tích hợp email mời / bắt buộc thay mật khẩu lần đầu hay nhật ký audit của thao tác quản trị. Khi deploy production cần đánh giá thêm các kiểm soát này.
+
+---
+
+## Tài liệu dự án ban đầu
+
 # Cloud Computing Project: Next.js & Supabase Cloud Architecture
 
 A modern web application architecture built with **Next.js App Router (Serverless on Vercel)** and **Supabase Managed PostgreSQL**. Designed with strict architectural boundaries, server/client isolation, zero-ORM neutrality, and multi-tier quality gates.
@@ -212,3 +258,188 @@ npm run dev
 | `npm test` | Run all unit, integration, migration, and RLS test suites |
 | `npm run test:e2e` | Run 4-tier architectural E2E test suite |
 | `npm run build` | Compile Next.js production build bundle |
+
+
+---
+
+## Nội dung đã hợp nhất từ `AUTH_SETUP.md`
+
+# CloudStock — Đăng nhập Supabase (3 vai trò)
+
+## Đã triển khai
+
+- `/login`: đăng nhập email/mật khẩu với Supabase Auth; không cho đăng ký công khai.
+- `/`: kiểm tra session, gọi NestJS `GET /api/auth/me` để lấy vai trò từ `public.profiles`; chuyển về `/login` khi chưa đăng nhập.
+- Dashboard khóa vai trò theo API; không còn dropdown đổi quyền giả lập; có nút Đăng xuất.
+- Access token được gửi tới NestJS để kiểm chứng bằng Supabase Auth và vai trò trong `profiles`.
+- Token được lưu tại `sessionStorage` trên trình duyệt (không tồn tại sau khi đóng tab); tự refresh khi hết hạn. Với triển khai production, nên chuyển sang kiến trúc cookie HttpOnly/BFF, CSP chặt chẽ, và áp dụng bảo vệ route từ phía server.
+
+## Cấu hình
+
+Tạo file `.env.local` tại root (không commit):
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_LEGACY_ANON_KEY
+NEXT_PUBLIC_API_URL=http://localhost:4000/api
+```
+
+Backend giữ nguyên `.env` riêng và chứng chỉ CA đã hoạt động trên máy. Khởi động `cd backend && npm run dev` và tại root `npm run dev`.
+
+## Tài khoản
+
+Tạo 3 user trong Supabase Authentication → Users. Gán 3 `auth.users.id` tương ứng vào `public.profiles`, với role `admin`, `staff`, `viewer`. Bảng profiles phải có hồ sơ tương ứng; API sẽ trả 403 nếu thiếu.
+
+## Thử nghiệm
+
+1. Truy cập `http://localhost:3000/` (chưa đăng nhập) → `/login`.
+2. Đăng nhập Admin → hiển thị Dashboard có menu quản trị.
+3. Đăng xuất và đăng nhập Staff → chỉ có menu dashboard/sản phẩm/nhập xuất/lịch sử.
+4. Đăng xuất và đăng nhập Viewer → chỉ có menu dashboard/báo cáo.
+5. Tự nhập đường dẫn `/` khi chưa đăng nhập → bị chuyển về `/login`.
+6. Đăng nhập với tài khoản thiếu `profiles` → lỗi phân quyền.
+
+**Dữ liệu kho đã tích hợp:** `Dashboard.tsx` đọc `/api/products?limit=100`, `/api/categories`, `/api/units`, `/api/dashboard` và `/api/movements` (chỉ Admin/Staff). Các thao tác tạo/sửa/xóa sản phẩm và nhập/xuất thực hiện bằng NestJS API, không ghi vào localStorage. Nếu có hơn 100 sản phẩm, UI sẽ cảnh báo cần phân trang. Giá vốn và tồn kho mới được cập nhật thông qua database; tồn đầu kỳ của sản phẩm mới phải là 0, nhập bằng phiếu để có lịch sử.
+
+Không đưa `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `.env` hoặc chứng chỉ riêng vào GitHub.
+
+
+---
+
+## Nội dung đã hợp nhất từ `CHANGELOG_UI.md`
+
+# CloudStock — cập nhật giao diện và lịch sử giao dịch
+
+- Lịch sử giao dịch hiển thị **vai trò** từ `public.profiles` qua LEFT JOIN, không lộ UUID trên UI. `performed_by` vẫn lưu UUID phục vụ truy vết và tính toàn vẹn dữ liệu.
+- Nhãn hiển thị: Quản trị viên, Nhân viên kho, Người xem báo cáo; hồ sơ không tìm thấy sẽ hiện Chưa xác định.
+- Chuẩn hóa thông báo thành công và loại bỏ tên công nghệ/thuật ngữ lập trình trong giao diện người dùng.
+- Tắt biểu tượng N của Next.js khi chạy development bằng `devIndicators: false`.
+- Không thay đổi schema, dữ liệu, vai trò thực tế hoặc thiết lập bí mật.
+
+## Kiểm tra
+1. Chạy lại NestJS và Next.js.
+2. Đăng nhập Staff, tạo phiếu nhập thử, mở Lịch sử giao dịch: cột Người thực hiện hiển thị Nhân viên kho.
+3. Đăng nhập Admin, thực hiện giao dịch: cột Người thực hiện hiển thị Quản trị viên.
+4. Kiểm tra thêm/sửa/xóa sản phẩm, toast chỉ hiển thị câu thân thiện.
+5. Mở `http://localhost:3000`, biểu tượng N không còn hiển thị.
+
+
+---
+
+## Nội dung đã hợp nhất từ `CLOUDSTOCK_GUIDE.md`
+
+# CloudStock — Hướng dẫn nhóm 3 thành viên
+
+## Đánh giá repository ban đầu
+
+Repository gốc dùng **Next.js 16 + React 19, serverless, Supabase PostgreSQL**, không có NestJS. Đã có khung thư mục, health endpoint, Sentry, 2 migration nền, CI và các test về kiến trúc. Không có CRUD nghiệp vụ kho hoặc màn hình dashboard trong ZIP. Bản mới giữ nguyên các file cũ và thêm UI dashboard + thư mục `backend/` NestJS riêng.
+
+## Trải nghiệm giao diện nhanh
+
+```bash
+npm install
+npm run dev
+```
+
+Mở http://localhost:3000. Mặc định ở giao diện Admin; **đổi vai trò** góc trên bên phải để xem giao diện Nhân viên kho hoặc Người xem báo cáo. UI hiện là **prototype tương tác**, dữ liệu mẫu lưu trong `localStorage` của trình duyệt, **chưa gọi NestJS hoặc Supabase**. Thêm/sửa/xóa SKU, nhập/xuất tồn, xem lịch sử, CSV báo cáo đã thao tác được ở chế độ demo. Xóa dữ liệu bằng DevTools > Application > Local Storage nếu muốn reset.
+
+## Vai trò
+
+| Chức năng | Admin | Nhân viên kho | Người xem báo cáo |
+|---|---|---|---|
+| Dashboard | Xem | Xem | Xem |
+| Sản phẩm | CRUD | Xem | Không truy cập |
+| Danh mục / đơn vị | CRUD | Không | Không |
+| Nhập / xuất | Có | Có | Không |
+| Lịch sử giao dịch | Có | Có | Không |
+| Báo cáo | Xem | Không | Xem |
+| Quản lý người dùng | Có | Không | Không |
+
+## Trách nhiệm 3 người
+
+1. **Thành viên 1 — Backend & bảo mật:** `backend/src/`, Supabase Auth, xử lý roles, kiểm thử xuất vượt tồn, race condition.
+2. **Thành viên 2 — PostgreSQL & Cloud:** migrations, Supabase, seed, CI/CD, environment, logging, health check, deploy NestJS.
+3. **Thành viên 3 — Frontend & báo cáo:** `src/components/Dashboard.tsx`, `src/app/globals.css`, tách thành component theo module, kết nối API, dashboard và báo cáo.
+
+Cả nhóm cần cùng review pull request, viết hướng dẫn, test role và chuẩn bị demo luồng từ login đến nhập xuất.
+
+## Kết nối giao diện với backend (việc còn lại)
+
+1. Thiết lập Supabase Auth browser client, màn hình login, nhận JWT/session.
+2. Tách UI khỏi mảng demo/localStorage thành React query/fetch tới `http://localhost:4000/api` với `Authorization: Bearer <token>`.
+3. Đổi role switch demo thành role đọc từ API (không cho người dùng tự chọn role).
+4. Tách danh mục, đơn vị tính, quản trị tài khoản thành CRUD hoàn chỉnh, thêm ngày lọc báo cáo và xử lý pagination.
+5. Viết kiểm thử e2e có PostgreSQL test DB, deploy và kiểm tra quyền API.
+
+**Không dùng UI switch role làm phân quyền thật.** Đây là prototype để nghiệm thu UX trước khi nối backend. API NestJS đã có logic kho và JWT/role nhưng chưa chạy thử với project Supabase thật.
+
+## Lệnh chạy
+
+Frontend: `npm install && npm run dev` (Node >=22). API: `cd backend && npm install && npm run dev`. Migration chạy bằng Supabase SQL Editor. Cần đặt secrets trong backend `.env`, tuyệt đối không commit file `.env`.
+
+
+---
+
+## Nội dung đã hợp nhất từ `CLOUDSTOCK_LIVE_DATA.md`
+
+# CloudStock – kết nối dữ liệu kho thật
+
+## Những gì đã thay đổi
+- Dashboard đọc danh sách sản phẩm từ `GET /api/products?limit=100` bằng Supabase access token của người đăng nhập.
+- Sản phẩm Supabase dùng `category_name`, `unit_symbol`, `cost_price`, `stock_quantity`, `minimum_stock`; map sang kiểu hiển thị tiếng Việt.
+- Admin thêm/sửa/xóa sản phẩm qua `POST/PATCH/DELETE /api/products`.
+- Admin/Staff nhập xuất qua `POST /api/movements`, backend transaction khóa row để chống xuất quá tồn.
+- Admin/Staff đọc `GET /api/movements?limit=100`; Viewer chỉ xem thống kê và báo cáo; biểu đồ lấy từ `GET /api/dashboard`.
+- Không lấy dữ liệu từ seed/localStorage nữa; lỗi API có thông báo và nút Tải lại, không hiện dữ liệu giả khi backend lỗi.
+
+## Chạy
+1. Giữ file `backend/.env` và chứng chỉ SSL trong `backend/certs/` của máy đang hoạt động. Không copy vào GitHub.
+2. Cấu hình `cloudstock/.env.local` với NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_API_URL=http://localhost:4000/api.
+3. Terminal 1: `cd backend && npm install && npm run dev`
+4. Terminal 2 tại thư mục gốc: `npm install && npm run dev`
+5. Mở http://localhost:3000/login và đăng nhập tài khoản trong bảng profiles.
+
+## Lưu ý
+- Màn hình sản phẩm chỉ tải tối đa 100 bản ghi; cần phát triển phân trang server-side nếu dữ liệu lớn hơn.
+- Sản phẩm mới được tạo với tồn kho 0; phải lập phiếu nhập để tăng tồn và ghi lịch sử.
+- Biểu đồ đang hiển thị tổng hợp nhập xuất theo ngày; phần báo cáo thể hiện số **ngày** có nhập/xuất, không phải số phiếu.
+- Menu Admin và Staff giữ UI như cũ; tạo danh mục/đơn vị mới vẫn dùng API riêng hoặc Supabase SQL Editor, chưa có form cho tính năng này.
+- Không truy cập trực tiếp database từ browser, không sử dụng service role key trong client.
+- Chưa xác minh tích hợp với Supabase thật trong môi trường này; cần kiểm tra login, 30 sản phẩm, CRUD và lịch sử trên máy bạn.
+
+
+---
+
+## Nội dung đã hợp nhất từ `backend/README.md`
+
+# CloudStock API · NestJS
+
+Backend REST API dùng Supabase Auth (JWT qua `auth.getUser`) và PostgreSQL `pg`. Không sử dụng Supabase `service_role` trong trình duyệt.
+
+## Chạy
+
+```bash
+cd backend
+npm install
+cp .env.example .env  # Windows: copy .env.example .env
+npm run dev
+```
+
+Điền `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY` trong `.env` rồi chạy migration `supabase/migrations/20261025000000_cloudstock.sql` bằng Supabase SQL editor (cần chạy 2 migration cũ trước). Tạo account trong Supabase Auth; tạo profile bằng SQL với UUID tài khoản. Cấp role `admin` thủ công khi bootstrap.
+
+## API (prefix `/api`)
+
+- `GET /health` health check DB
+- `GET/POST/PATCH/DELETE /products` (POST/PATCH/DELETE admin)
+- `GET/POST/DELETE /categories` (ghi admin)
+- `GET/POST /units` (ghi admin)
+- `GET/POST /movements` (admin, staff; ghi giao dịch atomically)
+- `GET /dashboard` (đã đăng nhập)
+- `GET /reports/low-stock`, `GET /reports/movements` (admin, viewer)
+- `GET /users`, `PATCH /users/:id/role` (admin)
+
+Mọi endpoint trừ `/health` yêu cầu `Authorization: Bearer <supabase_access_token>`. Người dùng lấy access token từ Supabase Auth login; backend xác thực thực sự trên máy chủ và truy vấn role từ bảng profiles. `POST /movements` dùng transaction và `SELECT ... FOR UPDATE` để không xảy ra xuất âm tồn khi gọi đồng thời.
+
+## Chú ý bảo mật
+
+Backend sử dụng kết nối PostgreSQL đáng tin cậy, thực thi kiểm soát role ở controllers. Không cấp thông tin đăng nhập PostgreSQL cho client. Cấu hình `DATABASE_URL` được dùng chỉ ở backend. Thay cho triển khai production: thêm audit log cho sửa danh mục, hardening validation và rate limiting, cache role theo yêu cầu, pagination báo cáo và phân quyền đủ chặt cho nguồn truy cập khác.

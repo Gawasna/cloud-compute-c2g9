@@ -1,2 +1,2 @@
-import Dashboard from '@/components/Dashboard';
-export default function Home(){return <Dashboard/>}
+import AuthGate from '@/components/AuthGate';
+export default function Home() { return <AuthGate />; }
