@@ -12,7 +12,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import dns from "node:dns/promises";
 
 interface EnvVariableCheck {
   key: string;
@@ -51,12 +50,6 @@ const TRACKED_VARIABLES: EnvVariableCheck[] = [
     category: "database",
     requiredForDev: true,
     description: "Direct PostgreSQL Connection String (Migrations)",
-  },
-  {
-    key: "DIRECT_POOLER_URL",
-    category: "database",
-    requiredForDev: false,
-    description: "Fallback Session Pooler for IPv4-only networks (Port 5432)",
   },
   {
     key: "NEXT_PUBLIC_SENTRY_DSN",
@@ -162,93 +155,9 @@ export function runDiagnostics(): { allCriticalPresent: boolean; results: Diagno
 }
 
 /**
- * Extracts the hostname from a database connection URI
- */
-function extractHostname(connectionString?: string): string | null {
-  if (!connectionString) return null;
-  try {
-    const sanitized = connectionString.replace(/^postgres:\/\//, "postgresql://");
-    const parsed = new URL(sanitized);
-    return parsed.hostname;
-  } catch {
-    const match = connectionString.match(/@([^:/]+)(?::\d+)?/);
-    return match ? match[1] : null;
-  }
-}
-
-interface NetworkDiagnosis {
-  directHost: string | null;
-  directIpv6Resolved: boolean;
-  poolerHost: string | null;
-  poolerIpv4Resolved: boolean;
-  routingMode: "DIRECT_IPV6" | "POOLER_IPV4_FALLBACK" | "UNRESOLVED";
-  summary: string;
-}
-
-/**
- * Performs DNS resolution checks to detect whether current workstation
- * is on an IPv4-only network or dual-stack IPv6 network.
- */
-async function checkNetworkConnectivity(
-  directUrl?: string,
-  poolerUrl?: string
-): Promise<NetworkDiagnosis> {
-  const directHost = extractHostname(directUrl);
-  const poolerHost = extractHostname(poolerUrl);
-
-  let directIpv6Resolved = false;
-  let poolerIpv4Resolved = false;
-
-  if (directHost) {
-    try {
-      const v6 = await dns.resolve6(directHost);
-      if (v6 && v6.length > 0) {
-        directIpv6Resolved = true;
-      }
-    } catch {
-      directIpv6Resolved = false;
-    }
-  }
-
-  if (poolerHost) {
-    try {
-      const v4 = await dns.resolve4(poolerHost);
-      if (v4 && v4.length > 0) {
-        poolerIpv4Resolved = true;
-      }
-    } catch {
-      poolerIpv4Resolved = false;
-    }
-  }
-
-  let routingMode: NetworkDiagnosis["routingMode"] = "UNRESOLVED";
-  let summary = "";
-
-  if (directIpv6Resolved) {
-    routingMode = "DIRECT_IPV6";
-    summary = "IPv6 dual-stack detected. Direct connection is viable (optimal for migrations, zero proxy hop).";
-  } else if (poolerIpv4Resolved) {
-    routingMode = "POOLER_IPV4_FALLBACK";
-    summary = "IPv4-only network detected (e.g. school/public WiFi). Direct host lacks IPv6 routing; Session Pooler (port 5432) active.";
-  } else {
-    routingMode = "UNRESOLVED";
-    summary = "Database host DNS resolution failed. Check network access or DNS settings.";
-  }
-
-  return {
-    directHost,
-    directIpv6Resolved,
-    poolerHost,
-    poolerIpv4Resolved,
-    routingMode,
-    summary,
-  };
-}
-
-/**
  * CLI execution entrypoint
  */
-async function main(): Promise<void> {
+function main(): void {
   console.log("=================================================");
   console.log("  Local Developer Environment Diagnostics Tool  ");
   console.log("=================================================");
@@ -267,36 +176,6 @@ async function main(): Promise<void> {
 
   console.log("-------------------------------------------------");
 
-  // Load active env values for network preflight
-  const rootDir = process.cwd();
-  const envFiles = [".env.local", ".env.development", ".env"];
-  let fileEnv: Record<string, string> = {};
-  for (const envFile of envFiles) {
-    const p = path.resolve(rootDir, envFile);
-    if (fs.existsSync(p)) {
-      fileEnv = { ...fileEnv, ...parseEnvFile(p) };
-    }
-  }
-
-  const directUrl = process.env.DIRECT_URL ?? fileEnv.DIRECT_URL;
-  const poolerUrl =
-    process.env.DIRECT_POOLER_URL ??
-    fileEnv.DIRECT_POOLER_URL ??
-    process.env.DATABASE_URL ??
-    fileEnv.DATABASE_URL;
-
-  console.log("[NETWORK PREFLIGHT] Probing DNS & IPv4/IPv6 Routing...");
-  const net = await checkNetworkConnectivity(directUrl, poolerUrl);
-
-  console.log(`Direct Host     : ${net.directHost ?? "Not configured"}`);
-  console.log(`  - IPv6 AAAA   : ${net.directIpv6Resolved ? "PASS (Resolved)" : "UNAVAILABLE (No IPv6 route)"}`);
-  console.log(`Pooler Host     : ${net.poolerHost ?? "Not configured"}`);
-  console.log(`  - IPv4 A      : ${net.poolerIpv4Resolved ? "PASS (Resolved)" : "FAIL"}`);
-  console.log(`Routing Profile : [${net.routingMode}]`);
-  console.log(`Diagnosis       : ${net.summary}`);
-
-  console.log("-------------------------------------------------");
-
   const envExampleExists = fs.existsSync(path.resolve(process.cwd(), ".env.example"));
   console.log(`.env.example template available: ${envExampleExists ? "YES" : "NO"}`);
 
@@ -309,7 +188,5 @@ async function main(): Promise<void> {
 }
 
 if (process.env.NODE_ENV !== "test") {
-  main().catch((err) => {
-    console.error("Diagnostic error:", err);
-  });
+  main();
 }
