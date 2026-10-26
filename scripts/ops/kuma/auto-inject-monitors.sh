@@ -52,7 +52,7 @@ cursor.execute("PRAGMA table_info(monitor)")
 cols_info = cursor.fetchall()
 columns = [c[1] for c in cols_info]
 
-db_conn_str = "postgresql://postgres.gsejxaasdujmqveshqyf:wbIW2sVPL071GlLg@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres"
+db_conn_str = os.environ.get("DATABASE_URL") or "postgresql://postgres.your-project-ref:your-password@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres"
 health_url = "http://127.0.0.1:3000/api/health"
 
 # 1. Supabase Postgres Monitor

@@ -67,3 +67,8 @@ trace/
 # Syncthing
 .stversions/
 .stignore
+
+# Operations Data & Secrets
+scripts/ops/**/data/
+scripts/ops/**/.env
+
