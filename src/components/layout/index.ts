@@ -1,9 +1,5 @@
-import type { ReactNode } from "react";
+import type { ReactNode } from 'react';
 
-/**
- * Baseline layout components and contracts.
- * Provides structural containers and navigational shells for App Router pages.
- */
 export interface BaseLayoutProps {
   children: ReactNode;
 }
@@ -17,3 +13,12 @@ export interface FooterProps {
   copyrightYear?: number;
   companyName?: string;
 }
+
+export { default as Sidebar, PAGE_NAMES, ROLE_PERMISSIONS, ROLE_NAMES, PAGE_ICONS } from './Sidebar';
+export type { SidebarProps, Page, Role } from './Sidebar';
+
+export { default as Topbar } from './Topbar';
+export type { TopbarProps } from './Topbar';
+
+export { default as AppShell } from './AppShell';
+export type { AppShellProps } from './AppShell';
