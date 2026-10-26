@@ -18,9 +18,19 @@ const eslintConfig = [
       "dist/**",
       "coverage/**",
       "node_modules/**",
+      "backend/**",
+      ".agents/**",
+      ".stversions/**",
       "next-env.d.ts",
       "*.log",
     ],
+  },
+
+  // Relax React 19 set-state-in-effect warning for asynchronous lifecycle fetches
+  {
+    rules: {
+      "react-hooks/set-state-in-effect": "warn",
+    },
   },
 
   // Rule 1: UI Purity - src/components/ui/ must not import from src/server/ or src/features/

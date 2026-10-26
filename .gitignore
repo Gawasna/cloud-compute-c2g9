@@ -63,3 +63,10 @@ skills-lock.json
 .sdd/
 trace/
 **.md
+
+# Syncthing
+.stversions/
+.stignore
+# Operations Data & Secrets
+scripts/ops/**/data/
+scripts/ops/**/.env
