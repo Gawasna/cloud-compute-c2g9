@@ -35,6 +35,13 @@ describe("Unit: Next.js API Route Handlers Integrity & Security", () => {
       ...routes,
       "src/lib/db/client.ts",
       "src/lib/auth/server.ts",
+      "src/lib/auth/admin.ts",
+      "src/lib/auth/guard.ts",
+      "src/lib/auth/profile-cache.ts",
+      "src/lib/auth/token.ts",
+      "src/lib/auth/types.ts",
+      "src/lib/api/errors.ts",
+      "src/lib/utils/validation.ts",
     ];
 
     for (const file of allServerFiles) {
@@ -110,32 +117,55 @@ describe("Unit: Next.js API Route Handlers Integrity & Security", () => {
       "db client must support configurable DATABASE_POOL_SIZE"
     );
 
+    const authAdmin = readFileSync(
+      resolve(process.cwd(), "src/lib/auth/admin.ts"),
+      "utf8"
+    );
+    assert.ok(
+      authAdmin.includes("globalThis as unknown as") && authAdmin.includes("__supabaseAdmin: SupabaseClient | undefined"),
+      "auth admin client must use globalThis singleton for getSupabaseAdminClient"
+    );
+
     const authServer = readFileSync(
       resolve(process.cwd(), "src/lib/auth/server.ts"),
       "utf8"
     );
     assert.ok(
-      authServer.includes("globalThis as unknown as { __supabaseAdmin: SupabaseClient | undefined }"),
-      "auth server must use globalThis singleton for getSupabaseAdminClient"
+      authServer.includes("getSupabaseAdminClient"),
+      "auth server facade must export getSupabaseAdminClient"
     );
   });
 
   it("should verify UUID validation helper and error code mappings in auth server", () => {
+    const validationModule = readFileSync(
+      resolve(process.cwd(), "src/lib/utils/validation.ts"),
+      "utf8"
+    );
+    assert.ok(
+      validationModule.includes("export function isValidUuid"),
+      "validation utility must export isValidUuid validator"
+    );
+
+    const errorsModule = readFileSync(
+      resolve(process.cwd(), "src/lib/api/errors.ts"),
+      "utf8"
+    );
+    assert.ok(
+      errorsModule.includes('"23505"'),
+      "handleApiError must map PostgreSQL unique violation 23505 to 409"
+    );
+    assert.ok(
+      errorsModule.includes('"23503"'),
+      "handleApiError must map PostgreSQL foreign key violation 23503 to 409"
+    );
+
     const authServer = readFileSync(
       resolve(process.cwd(), "src/lib/auth/server.ts"),
       "utf8"
     );
     assert.ok(
-      authServer.includes("export function isValidUuid"),
-      "auth server must export isValidUuid validator"
-    );
-    assert.ok(
-      authServer.includes('"23505"'),
-      "handleApiError must map PostgreSQL unique violation 23505 to 409"
-    );
-    assert.ok(
-      authServer.includes('"23503"'),
-      "handleApiError must map PostgreSQL foreign key violation 23503 to 409"
+      authServer.includes("isValidUuid") && authServer.includes("handleApiError"),
+      "auth server facade must re-export isValidUuid and handleApiError for backwards compatibility"
     );
   });
 
@@ -156,6 +186,50 @@ describe("Unit: Next.js API Route Handlers Integrity & Security", () => {
     assert.ok(
       movementRoute.includes("isValidUuid(productId)"),
       "movements route must validate productId UUID format"
+    );
+  });
+
+  it("should enforce warm database pool with at least 5-minute idle timeout", () => {
+    const dbClient = readFileSync(
+      resolve(process.cwd(), "src/lib/db/client.ts"),
+      "utf8"
+    );
+    assert.ok(
+      dbClient.includes("300000"),
+      "db client pool must configure at least 300000ms (5min) idleTimeoutMillis to prevent handshake spikes"
+    );
+  });
+
+  it("should verify local JWKS verification and promise in-flight coalescing in auth server", () => {
+    const tokenModule = readFileSync(
+      resolve(process.cwd(), "src/lib/auth/token.ts"),
+      "utf8"
+    );
+    assert.ok(
+      tokenModule.includes("createRemoteJWKSet") && tokenModule.includes("jwtVerify"),
+      "auth token module must use jose JWKS for local token verification"
+    );
+    assert.ok(
+      tokenModule.includes('audience: "authenticated"'),
+      "local JWT verify must enforce audience: 'authenticated' to reject anon keys"
+    );
+
+    const profileCacheModule = readFileSync(
+      resolve(process.cwd(), "src/lib/auth/profile-cache.ts"),
+      "utf8"
+    );
+    assert.ok(
+      profileCacheModule.includes("__inFlightProfiles"),
+      "profile cache module must implement in-flight promise coalescing to eliminate cache stampede"
+    );
+
+    const authServer = readFileSync(
+      resolve(process.cwd(), "src/lib/auth/server.ts"),
+      "utf8"
+    );
+    assert.ok(
+      authServer.includes("verifyToken") && authServer.includes("authenticateUser"),
+      "auth server facade must export verification and authentication APIs"
     );
   });
 });

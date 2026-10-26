@@ -30,7 +30,10 @@ export function getDbPool(): Pool {
           ? { rejectUnauthorized: false }
           : undefined,
       max: maxPool,
-      idleTimeoutMillis: 10000,
+      idleTimeoutMillis: Math.max(
+        10000,
+        Number(process.env.DATABASE_IDLE_TIMEOUT) || 300000
+      ),
       connectionTimeoutMillis: 5000,
     });
   }
