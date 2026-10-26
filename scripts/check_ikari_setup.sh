@@ -1,0 +1,1 @@
+maintenance/check_ikari_setup.sh

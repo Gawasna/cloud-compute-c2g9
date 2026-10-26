@@ -63,3 +63,7 @@ skills-lock.json
 .sdd/
 trace/
 **.md
+
+# Syncthing
+.stversions/
+.stignore

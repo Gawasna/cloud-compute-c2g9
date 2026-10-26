@@ -1,0 +1,32 @@
+{
+  "description": "Supabase Dual-Layer Keep-Alive Monitor Specification",
+  "version": "1.0",
+  "generated_at": "2026-10-25T15:11:38Z",
+  "monitors": [
+    {
+      "name": "Supabase Postgres Pooler Keep-Alive",
+      "type": "postgres",
+      "hostname": "aws-0-ap-northeast-1.pooler.supabase.com",
+      "port": 6543,
+      "database": "postgres",
+      "username": "postgres.gsejxaasdujmqveshqyf",
+      "interval_seconds": 300,
+      "retry_interval_seconds": 60,
+      "max_retries": 3,
+      "description": "Direct PostgreSQL connection executing 'SELECT 1;' to keep Supabase DB active and avoid the 7-day inactivity pause.",
+      "note": "Enter your DB password when configuring in Uptime Kuma UI."
+    },
+    {
+      "name": "App Production Health & Supabase Ping",
+      "type": "http",
+      "url": "https://<YOUR_DEPLOYED_APP_DOMAIN>/api/health",
+      "fallback_local_url": "http://127.0.0.1:3000/api/health",
+      "method": "GET",
+      "interval_seconds": 120,
+      "retry_interval_seconds": 30,
+      "max_retries": 2,
+      "accepted_statuscodes": ["200"],
+      "description": "HTTP ping to Next.js /api/health handler which actively queries Supabase PostgREST gateway."
+    }
+  ]
+}
