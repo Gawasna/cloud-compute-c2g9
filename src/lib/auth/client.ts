@@ -5,7 +5,8 @@ type Session = { access_token: string; refresh_token: string; expires_at: number
 const storageKey = 'cloudstock-auth-session-v1';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') || '';
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || '/api';
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || '';
+const apiUrl = (rawApiUrl && !rawApiUrl.includes(':4000')) ? rawApiUrl : '/api';
 
 function requireConfig() {
   if (!supabaseUrl || !anonKey || supabaseUrl.includes('your-project-ref')) {
