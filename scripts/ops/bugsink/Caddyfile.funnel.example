@@ -1,0 +1,36 @@
+# ==============================================================================
+# Caddyfile Example for Bugsink Ingest Reverse Proxy over Tailscale Funnel
+# Target Architecture: MASTER_INFRA.puml (Self-hosted IngestProxy)
+# ==============================================================================
+
+# Replace with your actual Tailscale machine Funnel domain
+https://elitedesk-hp.tailnet-xyz.ts.net:443 {
+    # 1. Rate limiting (protects HP Core i5 8500T 35W TDP against DoS spam)
+    # rate_limit {
+    #     zone bugsink_ingest {
+    #         key {remote_host}
+    #         events 100
+    #         window 1m
+    #     }
+    # }
+
+    # 2. Strict Ingest-Only Allowlist:
+    # Only allow Sentry SDK envelope and store POST requests.
+    @sentry_ingest {
+        method POST
+        path_regexp ^/api/[0-9]+/(envelope|store)/?$
+    }
+
+    handle @sentry_ingest {
+        reverse_proxy 127.0.0.1:35800 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-Proto https
+        }
+    }
+
+    # 3. Block all Web Dashboard / Admin / Settings from public Funnel
+    handle {
+        respond "Access Denied: Bugsink Dashboard is restricted to Tailnet internal network (:8443 or :35800)." 403
+    }
+}

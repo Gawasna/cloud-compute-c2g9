@@ -3,12 +3,20 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import {
+  resolveTelemetryConfig,
+  createMultiplexedTelemetryTransport,
+} from "./src/lib/observability/multiplexed-transport";
+
+const { primaryDsn, isSentryValid } = resolveTelemetryConfig();
 
 Sentry.init({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  dsn: primaryDsn,
 
   // Adjust this value in production, or use tracesSampler for greater control
-  tracesSampleRate: 1.0,
+  tracesSampleRate: isSentryValid ? 1.0 : 0.0,
+
+  transport: createMultiplexedTelemetryTransport(),
 
   // Setting this option to true will print useful information to the console while you're setting up Sentry.
   debug: false,

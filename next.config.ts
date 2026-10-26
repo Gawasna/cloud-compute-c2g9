@@ -8,6 +8,6 @@ const nextConfig: NextConfig = {
 
 export default withSentryConfig(nextConfig, {
   silent: true,
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
+  org: process.env.SENTRY_ORG || "gawasu",
+  project: process.env.SENTRY_PROJECT || "cloudstock",
 });

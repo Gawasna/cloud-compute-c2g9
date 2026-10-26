@@ -1,0 +1,25 @@
+# ==============================================================================
+# Uptime Kuma Compose - Optimized for HP EliteDesk (User: ikari)
+# Hardware Profile: Intel i5 8500T (35W TDP) / 8GB RAM Node
+# Engine: Rootless Docker (UID 1002) - Cgroup v2 unprivileged compliant
+# ==============================================================================
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    container_name: ops_uptime_kuma
+    restart: unless-stopped
+    ports:
+      # Bind to Tailscale IP (default: 100.103.109.18) or localhost to prevent public exposure
+      - "${KUMA_BIND_IP:-100.103.109.18}:${KUMA_PORT:-3001}:3001"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - UPTIME_KUMA_PORT=3001
+      - TZ=Asia/Ho_Chi_Minh
+    healthcheck:
+      test: ["CMD-SHELL", "node -e 'require(\"http\").get(\"http://127.0.0.1:3001\", (r) => process.exit(r.statusCode === 200 || r.statusCode === 302 ? 0 : 1))'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
