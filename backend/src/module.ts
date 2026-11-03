@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import {Module,Controller,Get,Post,Patch,Delete,Body,Param,Query,Req,UseGuards,Injectable,CanActivate,ExecutionContext,ForbiddenException,UnauthorizedException,BadRequestException,NotFoundException,ConflictException,OnModuleDestroy} from '@nestjs/common';
+import {Module,Controller,Get,Post,Patch,Delete,Body,Param,Query,Req,UseGuards,Injectable,CanActivate,ExecutionContext,ForbiddenException,UnauthorizedException,BadRequestException,NotFoundException,ConflictException,OnModuleDestroy,Res} from '@nestjs/common';
 import {ConfigModule} from '@nestjs/config';
 import {createClient} from '@supabase/supabase-js';
 import {Pool} from 'pg';
 import {IsString,IsOptional,IsInt,IsNumber,Min,MaxLength,IsIn,IsUUID} from 'class-validator';
-import type {Request} from 'express';
+import type {Request,Response} from 'express';
 type Role='admin'|'staff'|'viewer';type AuthUser={id:string;role:Role};type AuthedRequest=Request&{user:AuthUser};
 @Injectable() class Database implements OnModuleDestroy{
  // Cung cấp CA của PostgreSQL/Supabase bằng DATABASE_SSL_CA_PATH.
@@ -69,7 +69,103 @@ class UserStatusDto{@IsIn([true,false]) isActive!:boolean}
  @Post()async create(@Req()req:AuthedRequest,@Body()b:MoveDto){roles(req,['admin','staff']);const client=await this.db.pool.connect();try{await client.query('BEGIN');const row=await client.query('select id,stock_quantity,deleted_at from public.products where id=$1 for update',[b.productId]);const p=row.rows[0];if(!p||p.deleted_at)throw new NotFoundException('Không tìm thấy sản phẩm');const next=p.stock_quantity+(b.type==='IN'?b.quantity:-b.quantity);if(next<0)throw new BadRequestException('Không thể xuất quá số lượng tồn kho');await client.query('update public.products set stock_quantity=$1,updated_at=now() where id=$2',[next,b.productId]);const m=await client.query('insert into public.stock_movements(product_id,type,quantity,balance_after,note,performed_by) values($1,$2,$3,$4,$5,$6) returning *',[b.productId,b.type,b.quantity,next,b.note||null,req.user.id]);await client.query('COMMIT');return m.rows[0]}catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}}
 }
 @Controller('dashboard')@UseGuards(AuthGuard)class DashboardController{constructor(private db:Database){}@Get()async view(){const [summary,history]=await Promise.all([this.db.query(`select count(*)::int as total_products,coalesce(sum(stock_quantity),0)::bigint as total_units,coalesce(sum(stock_quantity*cost_price),0)::numeric as inventory_value,count(*) filter(where stock_quantity=0)::int as out_of_stock,count(*) filter(where stock_quantity>0 and stock_quantity<minimum_stock)::int as low_stock from public.products where deleted_at is null`),this.db.query(`select date_trunc('day',created_at)::date as day,type,sum(quantity)::int as quantity from public.stock_movements where created_at>=now()-interval '30 days' group by 1,2 order by 1`)]);return{summary:summary.rows[0],history:history.rows}}}
-@Controller('reports')@UseGuards(AuthGuard)class ReportsController{constructor(private db:Database){}@Get('low-stock')async low(@Req()req:AuthedRequest){roles(req,['admin','viewer']);return(await this.db.query('select id,name,sku,stock_quantity,minimum_stock,minimum_stock-stock_quantity as shortage from public.products where deleted_at is null and stock_quantity<minimum_stock order by shortage desc')).rows}@Get('movements')async movement(@Req()req:AuthedRequest){roles(req,['admin','viewer']);return(await this.db.query(`select date_trunc('day',created_at)::date as day,type,sum(quantity)::int as quantity from public.stock_movements group by 1,2 order by 1 desc limit 120`)).rows}}
+// Phase 6: mọi báo cáo tổng hợp đều thực hiện tại PostgreSQL, không lấy mẫu 100 sản phẩm.
+type Period = 'day'|'week'|'month';
+const reportPeriods:Record<Period,{step:string;count:number}>={
+ day:{step:'1 day',count:14},week:{step:'1 week',count:12},month:{step:'1 month',count:12},
+};
+const requirePeriod=(raw:string):Period=>{
+ if(!['day','week','month'].includes(raw))throw new BadRequestException('Kỳ báo cáo không hợp lệ');
+ return raw as Period;
+};
+const csvCell=(input:unknown)=>{
+ const plain=String(input??'');
+ // Chống CSV formula injection khi mở trong Excel/LibreOffice.
+ const safe=/^[\s\u0000-\u001f]*[=+@\-]/.test(plain)?`'${plain}`:plain;
+ return `"${safe.replace(/"/g,'""')}"`;
+};
+const csvEncode=(columns:string[],rows:unknown[][])=>'\uFEFF'+[columns,...rows].map(row=>row.map(csvCell).join(',')).join('\r\n')+'\r\n';
+@Controller('reports')@UseGuards(AuthGuard)class ReportsController{
+ constructor(private db:Database){}
+ @Get('overview')async overview(@Req()req:AuthedRequest){
+  roles(req,['admin','viewer']);
+  const r=await this.db.query(`select count(*)::int as total_products,
+   coalesce(sum(stock_quantity),0)::bigint as total_units,
+   coalesce(sum(stock_quantity*cost_price),0)::numeric as inventory_value,
+   count(*) filter(where stock_quantity=0)::int as out_of_stock,
+   count(*) filter(where stock_quantity>0 and stock_quantity<minimum_stock)::int as low_stock
+   from public.products where deleted_at is null`);
+  return r.rows[0];
+ }
+ @Get('trend')async trend(@Req()req:AuthedRequest,@Query('period')raw='day'){
+  roles(req,['admin','staff','viewer']);
+  const period=requirePeriod(raw),{step,count}=reportPeriods[period];
+  // Nhóm theo giờ Việt Nam; tuần bắt đầu vào thứ Hai (PostgreSQL ISO week).
+  // generate_series bổ sung các mốc không có giao dịch để biểu đồ không đứt quãng.
+  const result=await this.db.query(`with periods as (
+   select generate_series(
+    date_trunc($1::text,now() at time zone 'Asia/Ho_Chi_Minh')-($2::int-1)*$3::interval,
+    date_trunc($1::text,now() at time zone 'Asia/Ho_Chi_Minh'),$3::interval
+   ) as bucket
+  ), movements as (
+   select date_trunc($1::text,created_at at time zone 'Asia/Ho_Chi_Minh') as bucket,
+    type, sum(quantity)::bigint as amount
+   from public.stock_movements
+   where created_at >= ((select min(bucket) from periods) at time zone 'Asia/Ho_Chi_Minh')
+   group by 1,2
+  )
+  select to_char(p.bucket,'YYYY-MM-DD') as period,
+   coalesce(sum(m.amount) filter(where m.type='IN'),0)::bigint as inbound,
+   coalesce(sum(m.amount) filter(where m.type='OUT'),0)::bigint as outbound
+  from periods p left join movements m on p.bucket=m.bucket
+  group by p.bucket order by p.bucket`,[period,count,step]);
+  return {period,timezone:'Asia/Ho_Chi_Minh',points:result.rows};
+ }
+ @Get('low-stock')async low(@Req()req:AuthedRequest){
+  roles(req,['admin','viewer']);
+  return(await this.db.query(`select id,name,sku,stock_quantity,minimum_stock,
+   greatest(minimum_stock-stock_quantity,0) as shortage,
+   case when stock_quantity=0 then 'OUT' else 'LOW' end as status
+   from public.products where deleted_at is null and (stock_quantity=0 or stock_quantity<minimum_stock)
+   order by (stock_quantity=0) desc,shortage desc,name`)).rows;
+ }
+ @Get('movements')async movement(@Req()req:AuthedRequest){
+  roles(req,['admin','viewer']);
+  return(await this.db.query(`select date_trunc('day',created_at)::date as day,type,sum(quantity)::bigint as quantity from public.stock_movements group by 1,2 order by 1 desc limit 120`)).rows;
+ }
+ @Get('export')async exportCsv(@Req()req:AuthedRequest,@Query('kind')kind='inventory',@Res()res:Response){
+  roles(req,['admin','viewer']);
+  if(!['inventory','low-stock','movements'].includes(kind))throw new BadRequestException('Loại báo cáo không hợp lệ');
+  let columns:string[]=[],rows:unknown[][]=[];
+  if(kind==='inventory'){
+   const r=await this.db.query(`select p.sku,p.name,c.name as category,u.symbol as unit,
+    p.stock_quantity,p.minimum_stock,p.cost_price,(p.stock_quantity*p.cost_price) as inventory_value
+    from public.products p join public.categories c on c.id=p.category_id
+    join public.units u on u.id=p.unit_id where p.deleted_at is null order by p.sku`);
+   columns=['SKU','Tên sản phẩm','Danh mục','Đơn vị','Tồn kho','Ngưỡng tối thiểu','Giá vốn (VND)','Giá trị tồn (VND)'];
+   rows=r.rows.map(x=>[x.sku,x.name,x.category,x.unit,x.stock_quantity,x.minimum_stock,x.cost_price,x.inventory_value]);
+  }else if(kind==='low-stock'){
+   const r=await this.db.query(`select sku,name,stock_quantity,minimum_stock,
+    greatest(minimum_stock-stock_quantity,0) as shortage,
+    case when stock_quantity=0 then 'Hết hàng' else 'Sắp hết' end as status
+    from public.products where deleted_at is null and (stock_quantity=0 or stock_quantity<minimum_stock)
+    order by stock_quantity,sku`);
+   columns=['SKU','Tên sản phẩm','Tồn kho','Ngưỡng tối thiểu','Cần bổ sung','Trạng thái'];
+   rows=r.rows.map(x=>[x.sku,x.name,x.stock_quantity,x.minimum_stock,x.shortage,x.status]);
+  }else{
+   const r=await this.db.query(`select m.created_at,p.sku,p.name,m.type,m.quantity,m.balance_after,
+    coalesce(pr.display_name,'') as actor,coalesce(m.note,'') as note
+    from public.stock_movements m join public.products p on p.id=m.product_id
+    left join public.profiles pr on pr.id=m.performed_by order by m.created_at desc,m.id desc`);
+   columns=['Thời gian (UTC)','SKU','Tên sản phẩm','Loại','Số lượng','Tồn sau giao dịch','Người thực hiện','Ghi chú'];
+   rows=r.rows.map(x=>[new Date(x.created_at).toISOString(),x.sku,x.name,x.type,x.quantity,x.balance_after,x.actor,x.note]);
+  }
+  res.setHeader('Content-Type','text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition',`attachment; filename="cloudstock-${kind}-${new Date().toISOString().slice(0,10)}.csv"`);
+  res.setHeader('Cache-Control','no-store');
+  return res.send(csvEncode(columns,rows));
+ }
+}
 @Controller('users')@UseGuards(AuthGuard)class UsersController{
  constructor(private db:Database){}
  private adminClient(){

@@ -18,3 +18,21 @@ export async function apiRequest<T=unknown>(path:string,init:RequestInit={}):Pro
  if(response.status===204)return undefined as T;
  return response.json() as Promise<T>;
 }
+
+export type ReportPeriod='day'|'week'|'month';
+export interface TrendResponse{period:ReportPeriod;timezone:string;points:{period:string;inbound:string|number;outbound:string|number}[]}
+export interface LowStockItem{id:string;sku:string;name:string;stock_quantity:number;minimum_stock:number;shortage:number;status:'OUT'|'LOW'}
+export async function downloadReportCsv(kind:'inventory'|'low-stock'|'movements'){
+ const token=await getAccessToken();
+ if(!token)throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+ const response=await fetch(`${BASE}/reports/export?kind=${encodeURIComponent(kind)}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});
+ if(!response.ok){
+  const payload=await response.json().catch(()=>({}));
+  throw new Error(Array.isArray(payload.message)?payload.message.join(', '):payload.message||'Không thể xuất báo cáo');
+ }
+ const blob=await response.blob();const href=URL.createObjectURL(blob);
+ const anchor=document.createElement('a');anchor.href=href;
+ anchor.download=`cloudstock-${kind}-${new Date().toISOString().slice(0,10)}.csv`;
+ document.body.appendChild(anchor);anchor.click();anchor.remove();
+ window.setTimeout(()=>URL.revokeObjectURL(href),2000);
+}
