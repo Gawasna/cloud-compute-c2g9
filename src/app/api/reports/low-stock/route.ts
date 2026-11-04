@@ -9,10 +9,12 @@ export async function GET(request: Request) {
     requireRoles(user, ["admin", "viewer"]);
 
     const res = await query(`
-      select id, name, sku, stock_quantity, minimum_stock, minimum_stock - stock_quantity as shortage
+      select id, name, sku, stock_quantity, minimum_stock,
+        greatest(minimum_stock - stock_quantity, 0) as shortage,
+        case when stock_quantity = 0 then 'OUT' else 'LOW' end as status
       from public.products
-      where deleted_at is null and stock_quantity < minimum_stock
-      order by shortage desc
+      where deleted_at is null and (stock_quantity = 0 or stock_quantity < minimum_stock)
+      order by (stock_quantity = 0) desc, shortage desc, name
     `);
 
     return NextResponse.json(res.rows);
