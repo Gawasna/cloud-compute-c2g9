@@ -4,10 +4,13 @@ import { ApiError } from "@/lib/api/errors";
 import type { AuthUser, Role } from "./types";
 import { verifyToken } from "./token";
 import { fetchProfileWithDeduping } from "./profile-cache";
+import { ACCESS_COOKIE, readCookie } from "./session-cookies";
 
 export async function authenticateUser(request: Request): Promise<AuthUser> {
+  // Browser sessions use the HttpOnly cookie; the Bearer header stays supported for API/CLI clients.
   const authHeader = request.headers.get("authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : "";
+  const token = bearer || readCookie(request.headers.get("cookie"), ACCESS_COOKIE) || "";
 
   if (!token) {
     throw new ApiError(401, "Cần đăng nhập");

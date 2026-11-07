@@ -20,7 +20,7 @@ export async function GET(request: Request) {
         where deleted_at is null
       `),
       query(`
-        select date_trunc('day', created_at)::date as day, type, sum(quantity)::int as quantity
+        select date_trunc('day', created_at at time zone 'Asia/Ho_Chi_Minh')::date as day, type, sum(quantity)::int as quantity
         from public.stock_movements
         where created_at >= now() - interval '30 days'
         group by 1, 2

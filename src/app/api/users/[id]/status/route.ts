@@ -7,6 +7,7 @@ import {
   ApiError,
   getSupabaseAdminClient,
   isValidUuid,
+  profileCache,
 } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
@@ -55,6 +56,7 @@ export async function PATCH(
         "update public.profiles set is_active = $1 where id = $2 returning id, is_active",
         [isActive, id]
       );
+      profileCache.delete(id); // lock/unlock takes effect immediately on this instance
       return NextResponse.json(result.rows[0]);
     } catch (dbError) {
       // Rollback Supabase Auth ban status if DB update fails

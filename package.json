@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/unit/*.test.mjs tests/integration/*.test.mjs tests/migration/*.test.mjs tests/rls/*.test.mjs",
+    "test": "node --experimental-strip-types --test tests/unit/*.test.mjs tests/migration/*.test.mjs tests/rls/*.test.mjs && npm run test:integration",
+    "test:integration": "node --conditions=react-server --experimental-strip-types --test tests/integration/*.test.mjs",
     "test:e2e": "node tests/e2e/run-all.mjs"
   },
   "dependencies": {

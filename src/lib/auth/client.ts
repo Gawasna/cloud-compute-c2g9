@@ -1,86 +1,64 @@
-/** Browser-only Supabase password auth; no privileged keys are ever exposed. */
+/**
+ * Browser-side auth helpers.
+ *
+ * Tokens are NEVER visible to JavaScript: login/refresh/logout go through /api/auth/* and the server
+ * stores the session in HttpOnly cookies. This module only knows the user's identity (id, role, email).
+ */
 export type Role = 'admin' | 'staff' | 'viewer';
 export type Identity = { id: string; role: Role; email: string };
-type Session = { access_token: string; refresh_token: string; expires_at: number; email: string };
-const storageKey = 'cloudstock-auth-session-v1';
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') || '';
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const rawApiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || '';
-const apiUrl = (rawApiUrl && !rawApiUrl.includes(':4000')) ? rawApiUrl : '/api';
 
-function requireConfig() {
-  if (!supabaseUrl || !anonKey || supabaseUrl.includes('your-project-ref')) {
-    throw new Error('Chưa cấu hình NEXT_PUBLIC_SUPABASE_URL và NEXT_PUBLIC_SUPABASE_ANON_KEY trong .env.local.');
-  }
+// Cookie auth requires same-origin requests, so the API base is always the relative /api.
+const apiUrl = '/api';
+
+async function readMessage(response: Response, fallback: string): Promise<string> {
+  const payload = await response.json().catch(() => ({}));
+  return typeof payload.message === 'string' && payload.message ? payload.message : fallback;
 }
-function remember(payload: Record<string, unknown>, fallbackEmail: string): Session {
-  const session: Session = {
-    access_token: String(payload.access_token || ''),
-    refresh_token: String(payload.refresh_token || ''),
-    expires_at: Math.floor(Date.now() / 1000) + Number(payload.expires_in || 3600),
-    email: String((payload.user as { email?: string } | undefined)?.email || fallbackEmail),
-  };
-  if (!session.access_token || !session.refresh_token) throw new Error('Supabase không trả về phiên đăng nhập hợp lệ.');
-  sessionStorage.setItem(storageKey, JSON.stringify(session));
-  return session;
-}
-function current(): Session | null {
-  try {
-    const raw = sessionStorage.getItem(storageKey);
-    return raw ? JSON.parse(raw) as Session : null;
-  } catch { return null; }
-}
-export function clearSession() { sessionStorage.removeItem(storageKey); }
-async function authRequest(path: string, body: Record<string, string>) {
-  requireConfig();
-  const response = await fetch(`${supabaseUrl}/auth/v1/${path}`, {
+
+export async function login(email: string, password: string): Promise<void> {
+  const response = await fetch(`${apiUrl}/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: anonKey },
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+    credentials: 'same-origin',
     cache: 'no-store',
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = String(payload.msg || payload.error_description || payload.message || 'Không thể xác thực tài khoản.');
-    if (response.status === 400 && /invalid login credentials/i.test(message)) throw new Error('Email hoặc mật khẩu không chính xác.');
-    throw new Error(message);
+  if (!response.ok) throw new Error(await readMessage(response, 'Không thể xác thực tài khoản.'));
+}
+
+let refreshing: Promise<boolean> | null = null;
+
+/** Asks the server to renew the access cookie. Concurrent callers share one request (refresh tokens rotate). */
+export function refreshSession(): Promise<boolean> {
+  if (!refreshing) {
+    refreshing = fetch(`${apiUrl}/auth/refresh`, { method: 'POST', credentials: 'same-origin', cache: 'no-store' })
+      .then(r => r.ok)
+      .catch(() => false)
+      .finally(() => { refreshing = null; });
   }
-  return payload as Record<string, unknown>;
+  return refreshing;
 }
-export async function login(email: string, password: string) {
-  const payload = await authRequest('token?grant_type=password', { email, password });
-  remember(payload, email);
+
+/** fetch() with cookies; on 401 it renews the session once and retries. */
+export async function authedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const run = () => fetch(input, { ...init, credentials: 'same-origin', cache: 'no-store' });
+  let response = await run();
+  if (response.status === 401 && await refreshSession()) response = await run();
+  return response;
 }
-export async function getAccessToken(): Promise<string | null> {
-  const session = current();
-  if (!session) return null;
-  if (session.expires_at > Math.floor(Date.now() / 1000) + 60) return session.access_token;
-  try {
-    const payload = await authRequest('token?grant_type=refresh_token', { refresh_token: session.refresh_token });
-    return remember(payload, session.email).access_token;
-  } catch {
-    clearSession();
-    return null;
-  }
-}
+
 export async function getIdentity(): Promise<Identity | null> {
-  const token = await getAccessToken();
-  if (!token) return null;
-  const response = await fetch(`${apiUrl}/auth/me`, {
-    headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
-  });
-  if (response.status === 401) { clearSession(); return null; }
+  const response = await authedFetch(`${apiUrl}/auth/me`);
+  if (response.status === 401) return null;
   if (response.status === 403) throw new Error('Tài khoản chưa được cấp vai trò trong bảng profiles.');
   if (!response.ok) throw new Error(`Không xác minh được vai trò từ máy chủ (HTTP ${response.status}).`);
-  const data: { id: string; role: Role } = await response.json();
+  const data: { id: string; role: Role; email?: string } = await response.json();
   if (!['admin', 'staff', 'viewer'].includes(data.role)) throw new Error('Vai trò tài khoản không hợp lệ.');
-  return { ...data, email: current()?.email || '' };
+  return { id: data.id, role: data.role, email: data.email || '' };
 }
-export async function logout() {
-  const token = await getAccessToken();
+
+export async function logout(): Promise<void> {
   try {
-    if (token && supabaseUrl && anonKey) await fetch(`${supabaseUrl}/auth/v1/logout`, {
-      method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${token}` },
-    });
-  } finally { clearSession(); }
+    await fetch(`${apiUrl}/auth/logout`, { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
+  } catch { /* the server clears the cookies; nothing else to do client-side */ }
 }

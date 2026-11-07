@@ -2,19 +2,10 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { authenticateUser, requireRoles, handleApiError } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
+import { encodeCsv } from "@/lib/utils/csv";
 
-function escapeCsvCell(input: unknown): string {
-  const plain = String(input ?? "");
-  // Chống CSV formula injection khi mở trong spreadsheet software (Excel, Calc)
-  const safe = /^[\s\u0000-\u001f]*[=+@\-]/.test(plain) ? `'${plain}` : plain;
-  return `"${safe.replace(/"/g, '""')}"`;
-}
-
-function encodeCsv(columns: string[], rows: unknown[][]): string {
-  const header = columns.map(escapeCsvCell).join(",");
-  const body = rows.map((r) => r.map(escapeCsvCell).join(",")).join("\r\n");
-  return "\ufeff" + header + (body ? "\r\n" + body : "");
-}
+// Bound memory/response size on serverless (Vercel limits execution time and response size).
+const MOVEMENT_EXPORT_LIMIT = 50_000;
 
 export async function GET(request: Request) {
   try {
@@ -30,6 +21,7 @@ export async function GET(request: Request) {
 
     let columns: string[] = [];
     let rows: unknown[][] = [];
+    let truncated = false;
 
     if (kind === "inventory") {
       const res = await query(
@@ -77,8 +69,11 @@ export async function GET(request: Request) {
         from public.stock_movements m
         join public.products p on p.id = m.product_id
         left join public.profiles pr on pr.id = m.performed_by
-        order by m.created_at desc, m.id desc`
+        order by m.created_at desc, m.id desc
+        limit ${MOVEMENT_EXPORT_LIMIT + 1}`
       );
+      truncated = res.rows.length > MOVEMENT_EXPORT_LIMIT;
+      if (truncated) res.rows.length = MOVEMENT_EXPORT_LIMIT;
       columns = ["Thời gian (UTC)", "SKU", "Tên sản phẩm", "Loại", "Số lượng", "Tồn sau giao dịch", "Người thực hiện", "Ghi chú"];
       rows = res.rows.map((x) => [
         new Date(x.created_at).toISOString(),
@@ -101,6 +96,7 @@ export async function GET(request: Request) {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="cloudstock-${kind}-${dateStr}.csv"`,
         "Cache-Control": "no-store",
+        ...(truncated ? { "X-Export-Truncated": "true" } : {}),
       },
     });
   } catch (error) {

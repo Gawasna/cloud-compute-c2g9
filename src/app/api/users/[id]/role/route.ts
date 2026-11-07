@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid, type Role } from "@/lib/auth/server";
+import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid, profileCache, type Role } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
 export async function PATCH(
@@ -35,6 +35,7 @@ export async function PATCH(
       throw new ApiError(404, "Tài khoản không tồn tại");
     }
 
+    profileCache.delete(id); // apply the new role immediately on this instance
     return NextResponse.json(res.rows[0]);
   } catch (error) {
     return handleApiError(error);

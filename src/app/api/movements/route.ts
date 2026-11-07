@@ -1,7 +1,8 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid } from "@/lib/auth/server";
+import { authenticateUser, requireRoles, handleApiError } from "@/lib/auth/server";
 import { query, withTransaction } from "@/lib/db/client";
+import { applyStockMovement, parseMovementInput } from "@/server/services/stock";
 
 export async function GET(request: Request) {
   try {
@@ -32,53 +33,9 @@ export async function POST(request: Request) {
     requireRoles(user, ["admin", "staff"]);
 
     const body = await request.json().catch(() => ({}));
-    const productId = String(body.productId || "").trim();
-    const type = body.type;
-    const quantity = Number(body.quantity);
-    const note = body.note ? String(body.note).trim() : null;
+    const input = parseMovementInput(body);
 
-    if (!productId || !isValidUuid(productId)) {
-      throw new ApiError(400, "Mã sản phẩm không hợp lệ (yêu cầu định dạng UUID)");
-    }
-    if (type !== "IN" && type !== "OUT") {
-      throw new ApiError(400, "Loại biến động phải là IN hoặc OUT");
-    }
-    if (isNaN(quantity) || quantity < 1 || !Number.isInteger(quantity)) {
-      throw new ApiError(400, "Số lượng phải là số nguyên dương (tối thiểu 1)");
-    }
-    if (note && note.length > 500) {
-      throw new ApiError(400, "Ghi chú không được vượt quá 500 ký tự");
-    }
-
-    const movement = await withTransaction(async (client) => {
-      const productRes = await client.query<{ id: string; stock_quantity: number; deleted_at: string | null }>(
-        "select id, stock_quantity, deleted_at from public.products where id = $1 for update",
-        [productId]
-      );
-
-      const product = productRes.rows[0];
-      if (!product || product.deleted_at) {
-        throw new ApiError(404, "Không tìm thấy sản phẩm");
-      }
-
-      const nextStock = product.stock_quantity + (type === "IN" ? quantity : -quantity);
-      if (nextStock < 0) {
-        throw new ApiError(400, "Không thể xuất quá số lượng tồn kho");
-      }
-
-      await client.query("update public.products set stock_quantity = $1, updated_at = now() where id = $2", [
-        nextStock,
-        productId,
-      ]);
-
-      const insertRes = await client.query(
-        `insert into public.stock_movements(product_id, type, quantity, balance_after, note, performed_by)
-         values($1, $2, $3, $4, $5, $6) returning *`,
-        [productId, type, quantity, nextStock, note, user.id]
-      );
-
-      return insertRes.rows[0];
-    });
+    const movement = await withTransaction((client) => applyStockMovement(client, input, user.id));
 
     return NextResponse.json(movement, { status: 201 });
   } catch (error) {

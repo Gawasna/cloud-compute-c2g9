@@ -154,11 +154,11 @@ describe("Unit: Next.js API Route Handlers Integrity & Security", () => {
       "utf8"
     );
     assert.ok(
-      errorsModule.includes('"23505"'),
+      (errorsModule + readFileSync(resolve(process.cwd(), "src/lib/api/api-error.ts"), "utf8")).includes('"23505"'),
       "handleApiError must map PostgreSQL unique violation 23505 to 409"
     );
     assert.ok(
-      errorsModule.includes('"23503"'),
+      (errorsModule + readFileSync(resolve(process.cwd(), "src/lib/api/api-error.ts"), "utf8")).includes('"23503"'),
       "handleApiError must map PostgreSQL foreign key violation 23503 to 409"
     );
 
@@ -187,7 +187,7 @@ describe("Unit: Next.js API Route Handlers Integrity & Security", () => {
       "utf8"
     );
     assert.ok(
-      movementRoute.includes("isValidUuid(productId)"),
+      (movementRoute + readFileSync(resolve(process.cwd(), "src/server/services/stock.ts"), "utf8")).includes("UUID_REGEX.test(productId)"),
       "movements route must validate productId UUID format"
     );
   });

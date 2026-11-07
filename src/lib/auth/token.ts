@@ -29,7 +29,7 @@ export async function verifyToken(
       const { payload } = await jwtVerify(token, jwks, {
         issuer: `${url}/auth/v1`,
         audience: "authenticated",
-        algorithms: ["ES256", "RS256", "HS256"],
+        algorithms: ["ES256", "RS256"], // asymmetric only; legacy HS256 tokens use the getUser fallback
       });
 
       if (payload.sub && typeof payload.sub === "string") {

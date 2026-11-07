@@ -2,6 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
+import { toSearchPattern } from "@/lib/utils/sql";
 
 export async function GET(request: Request) {
   try {
@@ -9,13 +10,12 @@ export async function GET(request: Request) {
     requireRoles(user, ["admin", "staff", "viewer"]);
 
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search") || "";
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 20));
     const offset = (page - 1) * limit;
 
     const baseQuery = `from public.products p join public.categories c on c.id = p.category_id join public.units u on u.id = p.unit_id where p.deleted_at is null and (p.name ilike $1 or p.sku ilike $1)`;
-    const terms = [`%${search}%`];
+    const terms = [toSearchPattern(searchParams.get("search"))];
 
     const [itemsResult, countResult] = await Promise.all([
       query(

@@ -1,39 +1,20 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { ApiError, toErrorResult } from "./api-error";
 
-export class ApiError extends Error {
-  constructor(
-    public statusCode: number,
-    message: string
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+export { ApiError };
 
 export function handleApiError(error: unknown): NextResponse {
-  if (error instanceof ApiError) {
-    return NextResponse.json({ message: error.message }, { status: error.statusCode });
-  }
-
-  if (error instanceof Error) {
-    const pgError = error as Error & { code?: string };
-    if (pgError.code === "23505") {
-      return NextResponse.json(
-        { message: "Dữ liệu bị trùng lặp (SKU hoặc mã đã tồn tại)." },
-        { status: 409 }
-      );
+  const result = toErrorResult(error);
+  if (result.report) {
+    // Full details go to telemetry/server logs only, never to the HTTP response.
+    console.error("[api] unexpected error:", error);
+    try {
+      Sentry.captureException(error);
+    } catch {
+      /* telemetry must never break the request */
     }
-    if (pgError.code === "23503") {
-      return NextResponse.json(
-        { message: "Dữ liệu đang được liên kết bởi bản ghi khác hoặc tham chiếu không hợp lệ." },
-        { status: 409 }
-      );
-    }
-
-    const message = pgError.message || "Lỗi máy chủ nội bộ";
-    return NextResponse.json({ message }, { status: 500 });
   }
-
-  return NextResponse.json({ message: "Lỗi máy chủ nội bộ" }, { status: 500 });
+  return NextResponse.json({ message: result.message }, { status: result.status });
 }

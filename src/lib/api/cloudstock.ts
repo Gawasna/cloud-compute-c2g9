@@ -1,15 +1,14 @@
-import {getAccessToken} from '@/lib/auth/client';
-const rawBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
-const BASE = (rawBase && !rawBase.includes(':4000')) ? rawBase : '/api';
+import {authedFetch} from '@/lib/auth/client';
+// Cookie-based sessions only work same-origin, so the API base is always the relative /api.
+const BASE = '/api';
 export interface ApiProduct {id:string;name:string;sku:string;category_id:string;unit_id:string;category_name:string;unit_symbol:string;cost_price:string|number;stock_quantity:number;minimum_stock:number}
 export interface ApiCategory {id:string;name:string}
 export interface ApiUnit {id:string;name:string;symbol:string}
 export interface ApiMovement {id:string;sku:string;type:'IN'|'OUT';quantity:number;performed_by:string;actor_role?:'admin'|'staff'|'viewer'|null;actor_name?:string|null;created_at:string;note:string|null}
 export interface ApiDashboard {summary:{total_products:number;total_units:number;inventory_value:string;low_stock:number;out_of_stock:number};history:{day:string;type:'IN'|'OUT';quantity:number}[]}
 export async function apiRequest<T=unknown>(path:string,init:RequestInit={}):Promise<T>{
- const token=await getAccessToken();
- if(!token)throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
- const response=await fetch(`${BASE}${path}`,{...init,cache:'no-store',headers:{'Content-Type':'application/json',...init.headers,Authorization:`Bearer ${token}`}});
+ const response=await authedFetch(`${BASE}${path}`,{...init,headers:{'Content-Type':'application/json',...init.headers}});
+ if(response.status===401)throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
  if(!response.ok){
   const payload=await response.json().catch(()=>({}));
   const raw=payload.message;
@@ -24,9 +23,8 @@ export type ReportPeriod='day'|'week'|'month';
 export interface TrendResponse{period:ReportPeriod;timezone:string;points:{period:string;inbound:string|number;outbound:string|number}[]}
 export interface LowStockItem{id:string;sku:string;name:string;stock_quantity:number;minimum_stock:number;shortage:number;status:'OUT'|'LOW'}
 export async function downloadReportCsv(kind:'inventory'|'low-stock'|'movements'){
- const token=await getAccessToken();
- if(!token)throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
- const response=await fetch(`${BASE}/reports/export?kind=${encodeURIComponent(kind)}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});
+ const response=await authedFetch(`${BASE}/reports/export?kind=${encodeURIComponent(kind)}`);
+ if(response.status===401)throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
  if(!response.ok){
   const payload=await response.json().catch(()=>({}));
   throw new Error(Array.isArray(payload.message)?payload.message.join(', '):payload.message||'Không thể xuất báo cáo');
