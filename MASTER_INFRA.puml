@@ -1,8 +1,15 @@
 @startuml Master_FullDepth_v1_Relayout
-title Master Diagram v1 — deployment-safe DB evolution, free-tier reality (no custom domain) + Bugsink side sink
+title Master Diagram v1 — CloudStock Warehouse Management System & Deployment-Safe Infrastructure
 
-' Layout principle: the request path reads left-to-right.  Delivery, monitoring,
-' and human actions live above/below it so they do not cut through the core flow.
+' ==============================================================================
+' ARCHITECTURAL DESIGN & LAYOUT PRINCIPLES
+' - Request path reads left-to-right (People -> Edge -> Next.js Runtime -> Data).
+' - Delivery / CI-CD and Schema Evolution live above the runtime.
+' - Telemetry, Distributed Tracing and Multiplexed Error Sinks live below the runtime.
+' - Operations, Watchability, Alert Routing and Dashboards are right-side outcomes.
+' - Color convention: Quiet by default; only primary operational paths receive strong colors.
+' ==============================================================================
+
 left to right direction
 skinparam backgroundColor #FEFEFE
 skinparam packageStyle rectangle
@@ -10,10 +17,13 @@ skinparam linetype ortho
 skinparam nodesep 28
 skinparam ranksep 42
 skinparam shadowing false
-' Quiet by default: only primary operational paths receive a strong colour.
+
+' Line & font styling
 skinparam ArrowColor #94A3B8
 skinparam ArrowFontColor #64748B
 skinparam ArrowThickness 1
+
+' Component color palette by functional domain
 skinparam component {
   BackgroundColor<<human>> #FFECB3
   BackgroundColor<<dns>> #ECEFF1
@@ -33,12 +43,27 @@ skinparam component {
   BorderColor Black
 }
 
-' ======================= REQUEST PATH (top row) =======================
+' ==============================================================================
+' SECTION 01: ACTORS & RBAC ROLES (NGHIỆP VỤ PHÂN QUYỀN NGƯỜI DÙNG)
+' Nghiệp vụ: Hệ thống phân quyền 3 cấp (Role-Based Access Control) cho CloudStock:
+' - Admin: Toàn quyền cấu hình SKU, danh mục, đơn vị, quản lý tài khoản, xem & xuất báo cáo.
+' - Staff (Kho): Vận hành xuất/nhập tồn (IN/OUT), tra cứu tồn kho tức thời, chặn xem báo cáo nhạy cảm.
+' - Viewer (Kiểm toán/Kế toán): Xem Dashboard tổng quan, phân tích trend tồn kho, xuất báo cáo CSV.
+' - Engineering Team: Kỹ sư phụ trách hạ tầng và triển khai (Owner Dev, Collaborators).
+' ==============================================================================
 package "01 · People / engineering team" <<human>> {
-  actor "End User" as User
+  actor "CloudStock Users\n(Admin · Staff · Viewer)" as User
   actor "Partner Developer\n(collaborator)" as Partner
 }
 
+' ==============================================================================
+' SECTION 02: EDGE & INGRESS SECURITY (CỔNG BIÊN & BẢO VỆ MẠNG)
+' Nghiệp vụ: Cổng tiếp nhận lưu lượng công cộng (*.vercel.app - Free Tier / No custom domain):
+' - Vercel DNS: Phân giải tên miền máy chủ không dùng custom domain / Cloudflare DNS.
+' - Vercel Firewall (WAF): Chặn các cuộc tấn công web phổ biến (Hobby tier: 3 custom rules).
+' - Rate Limiting: Chống brute-force / spam login (Hobby tier: 1 rule dự án).
+' - Bot Management: Phát hiện và loại bỏ lưu lượng crawler / bot tự động trước khi vào app.
+' ==============================================================================
 package "02 · Edge" <<dns>> {
   component "Vercel domain / DNS\n(*.vercel.app · no custom domain)" as DNS <<dns>>
   component "Vercel Firewall\n(Hobby: 3 custom rules)" as WAF <<security>>
@@ -46,14 +71,37 @@ package "02 · Edge" <<dns>> {
   component "Bot Management" as BotMgmt <<security>>
 }
 
+' ==============================================================================
+' SECTION 03: NEXT.JS RUNTIME & BUSINESS ROUTE HANDLERS (ỨNG DỤNG & XỬ LÝ NGHIỆP VỤ KHO)
+' Nghiệp vụ: Kiến trúc Serverless 100% trên Next.js 16 (App Router) & React 19:
+' - Middleware: Bắt chặn Edge, inject W3C TraceContext headers và điều hướng.
+' - Client Components (CSR): Dashboard tương tác (Tabs: Overview, Products, Categories, Stock, Reports, Users).
+' - Server Components (RSC): Prefetch layout dữ liệu ban đầu trên Node.js runtime.
+' - Route Handlers (Nghiệp vụ cốt lõi):
+'   + /api/auth/me & /api/users/*: Xác thực JWT Supabase Auth, RBAC Policy Guard, quản lý tài khoản.
+'   + /api/categories & /api/units: Quản lý danh mục hàng hóa và đơn vị tính (Master Data).
+'   + /api/products/*: CRUD thông tin sản phẩm, định mức tồn kho tối thiểu (minimum_stock).
+'   + /api/movements: Xử lý giao dịch Nhập (IN) / Xuất (OUT) kho nguyên tử (SELECT ... FOR UPDATE).
+'   + /api/reports/*: Phân tích Overview, Trend 14d/12w/12m, cảnh báo Low-stock, xuất CSV UTF-8 BOM.
+'   + /api/health: Active PostgREST keep-alive ping chống Supabase Free-Tier tạm dừng (pause).
+'   + /api/debug/telemetry: Endpoint kiểm thử định tuyến lỗi Sentry và Bugsink.
+' ==============================================================================
 package "03 · Next.js / Vercel runtime" <<source>> {
   component "Middleware\nEdge Runtime" as Middleware <<source>>
   component "Server Components\nNode.js" as RSC <<source>>
-  component "Client Components\nBrowser" as CSR <<source>>
-  component "Route Handlers\nNode.js" as RouteHandler <<source>>
+  component "Client Components\nBrowser (CloudStock UI)" as CSR <<source>>
+  component "Route Handlers\nNode.js (Inventory API Engine)" as RouteHandler <<source>>
   component "Server Actions\nNode.js" as ServerAction <<source>>
 }
 
+' ==============================================================================
+' SECTION 04: CACHE, ACCELERATION & KV LAYER (BỘ NHỚ ĐỆM & TỐI ƯU TRUY VẤN)
+' Nghiệp vụ: Đảm bảo độ trễ thấp và giảm tải cho cơ sở dữ liệu Supabase Free Tier:
+' - Vercel Edge Cache: Lưu trữ tài nguyên tĩnh (assets, static JS/CSS).
+' - ISR Cache & Fetch Data Cache: Cache phản hồi dữ liệu ít biến động.
+' - Vercel KV / Upstash Redis: Cache-aside cho các session và token blacklist (tùy chọn).
+' - In-Memory Profile Cache: Cache quyền hạn người dùng (TTL 30s) có cơ chế Request Deduplication.
+' ==============================================================================
 package "04 · Cache & KV" <<cache>> {
   component "Vercel Edge Cache" as EdgeCache <<cache>>
   component "ISR Cache" as ISRCache <<cache>>
@@ -62,12 +110,26 @@ package "04 · Cache & KV" <<cache>> {
   component "Upstash Redis" as Upstash <<cache>>
 }
 
+' ==============================================================================
+' SECTION 05: SUPABASE DATA & INVENTORY ENTITIES (CƠ SỞ DỮ LIỆU & THỰC THỂ KHO)
+' Nghiệp vụ: Lưu trữ dữ liệu chuẩn hóa quan hệ PostgreSQL trên Supabase:
+' - Supavisor Connection Pooler: Cổng kết nối port 6543 (Transaction Mode) bảo vệ connection limit.
+' - Supabase Postgres Schema:
+'   + profiles: [id (auth.uid), display_name, role (admin/staff/viewer), is_active].
+'   + categories & units: Phân loại ngành hàng và đơn vị quy chuẩn (cái, quyển, ram).
+'   + products: Mã SKU độc bản, tên, category_id, unit_id, cost_price, stock_quantity, minimum_stock.
+'   + stock_movements: Sổ cái lịch sử nhập/xuất [type, quantity, balance_after, note, performed_by].
+' - Backup / PITR: Sao lưu dump off-site định kỳ bảo vệ an toàn dữ liệu trên gói miễn phí.
+' ==============================================================================
 package "05 · Supabase data" <<supabase>> {
-  component "Supavisor\nPooler" as Supavisor <<supabase>>
-  component "Supabase Postgres" as SupaDB <<supabase>>
+  component "Supavisor\nPooler (Port 6543)" as Supavisor <<supabase>>
+  component "Supabase Postgres\n(CloudStock Inventory DB)" as SupaDB <<supabase>>
   component "Backup / PITR\n(Free: db dump off-site;\nPITR = paid add-on)" as SupaBackup <<supabase>>
 }
 
+' ==============================================================================
+' CORE REQUEST & DATA FLOW RELATIONSHIPS (LUỒNG TRUY VẤN & DỮ LIỆU CHÍNH)
+' ==============================================================================
 User -[#2563EB]-> DNS : resolve
 DNS -[#2563EB]-> WAF
 WAF -[#2563EB]-> RateLimit
@@ -88,7 +150,7 @@ VercelKV .[#0F766E,dashed].> Supavisor : cache-aside
 Supavisor -[#0F766E]-> SupaDB
 SupaDB -[#0F766E]-> SupaBackup
 
-' Keep functional clusters internally compact and in an intentional order.
+' Internal layout hints for compact alignment
 WAF -[hidden]-> RateLimit
 RateLimit -[hidden]-> BotMgmt
 Middleware -[hidden]-> RSC
@@ -99,7 +161,14 @@ ISRCache -[hidden]-> FetchCache
 FetchCache -[hidden]-> VercelKV
 VercelKV -[hidden]-> Upstash
 
-' ======================= DELIVERY (above the runtime) =======================
+' ==============================================================================
+' SECTION 06: DELIVERY & CI/CD PIPELINE (QUY TRÌNH GIAO VẬN MÃ NGUỒN)
+' Nghiệp vụ: Tự động hóa kiểm thử và triển khai từ GitHub Webhooks tới Vercel:
+' - GitHub Repo: Quản lý nhánh chính (main/dev) và Pull Requests nhóm.
+' - Vercel Build System: Tự động chạy type-check, lint và Turbopack production build.
+' - Preview Deployments: Kiểm thử giao diện và API trên môi trường staging độc lập.
+' - Production Deployment: Bản phát hành chính thức phục vụ người dùng cuối.
+' ==============================================================================
 package "Delivery · CI/CD" <<cicd>> {
   actor "Owner Dev" as Owner
   component "GitHub Repo" as GitHub <<cicd>>
@@ -118,9 +187,16 @@ EnvVars -[#D97706]-> Preview
 EnvVars -[#D97706]-> Prod
 Prod -[hidden]down-> Middleware
 
-' ======================= DEPLOYMENT SAFETY =======================
-' Schema evolution is a separate release concern. A code rollback must not rely
-' on undoing production DDL after data has been written.
+' ==============================================================================
+' SECTION 07: DEPLOYMENT-SAFE SCHEMA EVOLUTION (TIẾN HÓA DỮ LIỆU EXPAND → CONTRACT)
+' Nghiệp vụ: Phòng ngừa downtime cơ sở dữ liệu khi cập nhật cấu trúc bảng kho:
+' - Versioned Migrations: Các tệp SQL tuần tự trong supabase/migrations/.
+' - Migration Gate (Expand-only): Thêm cột mới nullable hoặc view, không xóa cột cũ đang dùng.
+' - Compatibility Gate: Đảm bảo mã nguồn N-1 tương thích 100% với schema N.
+' - Feature Flag: Kích hoạt luồng đọc/ghi nghiệp vụ mới khi dữ liệu đã sẵn sàng.
+' - Backfill & Validation: Chuyển đổi dữ liệu cũ theo từng khối nhỏ (resumable chunks).
+' - Contract Gate: Chỉ thực thi lệnh xóa cột cũ (destructive DDL) sau khi xác nhận an toàn.
+' ==============================================================================
 package "Delivery · schema evolution (Expand → Contract)" <<cicd>> {
   component "Versioned migration files\n(supabase/migrations)" as SchemaRepo <<cicd>>
   component "Migration gate\n(expand-only release)" as MigrationGate <<cicd>>
@@ -143,7 +219,15 @@ Backfill -[#D97706]-> ContractGate : validation complete
 SupaBackup -[#D97706]-> ContractGate : recovery point verified
 ContractGate -[#BE123C]-> SupaDB : later: destructive contract
 
-' ======================= SECURITY & RECOVERY GUARDRAILS =======================
+' ==============================================================================
+' SECTION 08: SECURITY GUARDRAILS & DATA RECOVERY (HÀNG RÀO BẢO MẬT & PHỤC HỒI)
+' Nghiệp vụ: Kiểm soát ranh giới bảo mật và khả năng phục hồi thảm họa:
+' - RLS Policy Gate: Kích hoạt RLS, revoke toàn bộ quyền truy cập trực tiếp từ anon/authenticated.
+' - Service-Role Boundary: Chỉ Next.js backend đáng tin cậy mới sở hữu quyền truy vấn bảng kho.
+' - Secret Classification: Tách biệt biến môi trường công khai (NEXT_PUBLIC_*) và máy chủ (SUPABASE_SERVICE_ROLE_KEY).
+' - Restore Drill: Định kỳ diễn tập phục hồi từ bản dump off-site vào database cô lập.
+' - Measured RPO / RTO: Đo lường mục tiêu điểm phục hồi và thời gian phục hồi thực tế.
+' ==============================================================================
 package "Guardrails · data access & recovery" <<security>> {
   component "RLS policy gate\n(policy + regression tests)" as RLSGate <<security>>
   component "Service-role boundary\nserver-only credential" as ServiceRole <<security>>
@@ -162,7 +246,13 @@ SupaBackup -[#BE123C]-> RestoreDrill : scheduled restore test
 RestoreDrill -[#BE123C]-> RecoveryTarget : record actual recovery
 RecoveryTarget -[#BE123C]-> ContractGate : recovery evidence
 
-' ======================= TELEMETRY (below the runtime) =======================
+' ==============================================================================
+' SECTION 09: TELEMETRY & DISTRIBUTED TRACING (GIÁM SÁT VẬN HÀNH & TRUY VẾT)
+' Nghiệp vụ: Thu thập nhật ký runtime và vết thực thi yêu cầu:
+' - Vercel Runtime Logs: Nhật ký thực thi của Edge Middleware và Serverless Route Handlers.
+' - Vercel Speed Insights: Đo lường trải nghiệm người dùng thực tế (Core Web Vitals).
+' - Supabase Log Explorer & Reports: Giám sát tần suất query, pooler latency và database storage.
+' ==============================================================================
 package "Telemetry · built-in signals" {
   component "Vercel Runtime Logs" as VLogs <<vercel>>
   component "Vercel Speed Insights" as VSpeed <<vercel>>
@@ -170,15 +260,31 @@ package "Telemetry · built-in signals" {
   component "Supabase Reports" as SupaReports <<supabase>>
 }
 
+' ==============================================================================
+' SECTION 10: ERROR MULTIPLEXING & SENTRY ROUTING (ĐỊNH TUYẾN LỖI ĐA TẦNG)
+' Nghiệp vụ: Tối ưu hóa hạn ngạch Sentry Free Tier bằng cơ chế MuxTransport:
+' - Vercel OTel & Trace Context Header: Duy trì trace ID xuyên suốt từ client -> middleware -> API.
+' - Instrumentation.ts: Điểm tập trung bắt giữ sự kiện lỗi trên máy chủ và trình duyệt.
+' - Multiplexed Transport:
+'   + Strict Stream -> Sentry Cloud (Production quota-safe: lọc lỗi unhandled, P0/P1).
+'   + Loose Stream -> Bugsink HP Node (Thu nạp 100% lỗi dev, staging và exception phụ).
+' ==============================================================================
 package "Telemetry · tracing & errors" <<trace>> {
   component "Vercel OTel" as VercelOTel <<trace>>
   component "Trace Context\nHeader" as TraceCtx <<trace>>
   component "Instrumentation.ts" as Instrumentation <<external>>
   component "Multiplexed transport\nstrict → Sentry · loose → Bugsink" as MuxTransport <<external>>
-  component "Sentry.io" as SentryCloud <<external>>
+  component "Sentry.io\n(Production Error Sink)" as SentryCloud <<external>>
 }
 
-' Self-hosted side sink. Declared before any edge that references these aliases.
+' ==============================================================================
+' SECTION 11: SELF-HOSTED INFRASTRUCTURE · HP ELITEDESK (HẠ TẦNG MÁY CHỦ HOMELAB)
+' Nghiệp vụ: Cụm máy chủ HP EliteDesk (Intel Core i5 8500T, 8GB RAM) vận hành qua Tailscale:
+' - Tailscale Funnel (:443): Endpoint công khai *.ts.net tiếp nhận error ingestion từ Vercel.
+' - Reverse Proxy (Caddy / Nginx): Rate limit và xác thực allowlist đường dẫn ingest.
+' - Bugsink (Rootless Docker / 127.0.0.1): Sentry-compatible crash reporter tự lưu trữ.
+' - Tailscale Serve (:8443): Cổng nội bộ an toàn (Tailnet-only) để dev truy cập Web UI Bugsink.
+' ==============================================================================
 package "Self-hosted · HP EliteDesk (reached via Tailscale)" <<selfhost>> {
   component "Tailscale Funnel\n:443 · public *.ts.net\n(ingest only)" as Funnel <<dns>>
   component "Reverse proxy (Caddy / nginx)\nallowlist ingest paths + rate limit" as IngestProxy <<security>>
@@ -206,12 +312,20 @@ Funnel -[#7C3AED]-> IngestProxy : :443
 IngestProxy -[#7C3AED]-> Bugsink : ingest paths only
 Bugsink -[#7C3AED]-> BugsinkStore
 
-' ======================= OPERATIONS (right-side outcome) =======================
+' ==============================================================================
+' SECTION 12: OPERATIONS, DUAL WATCHDOG & HEARTBEAT (VẬN HÀNH & CHỐNG TẠM DỪNG DATABASE)
+' Nghiệp vụ: Duy trì tính sẵn sàng liên tục và kiểm soát chi phí Free Tier:
+' - GitHub Actions Cron: Watchdog từ đám mây (10–15 phút/lần).
+' - EliteDesk Systemd Timer: Watchdog từ on-premise HP Node (1 phút/lần bởi service account ikari).
+' - Health Endpoint (/api/health): Thực hiện lightweight PostgREST query giữ Supabase DB không bị pause sau 7 ngày.
+' - Uptime Kuma v2: Hệ thống đo đạc Uptime & Latency độc lập trên Rootless Docker.
+' - Usage Dashboards & Alerts: Cảnh báo sớm vượt ngưỡng tài nguyên Vercel & Supabase.
+' ==============================================================================
 package "Operations · heartbeat & cost" <<external>> {
-  component "GitHub Actions\nCron" as GHAction <<external>>
-  component "EliteDesk Cron\n(systemd)" as EliteCron <<external>>
-  component "Health Endpoint" as HealthEP <<external>>
-  component "Uptime Kuma /\nBetter Stack" as UptimeStore <<external>>
+  component "GitHub Actions\nCron (Cloud Heartbeat)" as GHAction <<external>>
+  component "EliteDesk Cron\n(systemd · 1m ping)" as EliteCron <<external>>
+  component "Health Endpoint\n(/api/health · DB ping)" as HealthEP <<external>>
+  component "Uptime Kuma v2\n(Ops Watchdog Node)" as UptimeStore <<external>>
   component "Vercel Usage\nDashboard" as VercelUsage <<cost>>
   component "Supabase Usage\nDashboard" as SupaUsage <<cost>>
   component "Usage Alert" as UsageAlert <<cost>>
@@ -229,19 +343,33 @@ SupaDB --> SupaUsage
 VercelUsage --> UsageAlert
 SupaUsage --> UsageAlert
 
-' Declare response actors before any watch signal routes to Telegram. PlantUML
-' otherwise auto-creates the alias on its first reference and rejects this later declaration.
+' ==============================================================================
+' SECTION 13: INCIDENT RESPONSE & ALERT ROUTING (XỬ LÝ SỰ CỐ & CẢNH BÁO TỨC THỜI)
+' Nghiệp vụ: Luồng thông báo khẩn cấp và quy trình ứng phó sự cố kho:
+' - Sentry Alert Rules: Phát hiện lỗi nghiêm trọng mới (New Issue, Regressed Issue).
+' - Telegram Bot: Kênh thông báo tức thời tới nhóm trực vận hành (On-call Team).
+' - Runbook: Hướng dẫn kỹ thuật xử lý sự cố (Phục hồi dữ liệu, xử lý âm kho, phân quyền lỗi).
+' - Vercel Rollback: Khôi phục tức thì về deployment an toàn trước đó nếu lỗi mã nguồn.
+' ==============================================================================
 package "Operations · alert & response" <<incident>> {
   component "Sentry Alert\nRules" as SentryAlert <<alert>>
-  component "Telegram Bot" as TeleBot <<alert>>
+  component "Telegram Bot\n(Incident Pager)" as TeleBot <<alert>>
   actor "On-call\nResponder" as OnCall
-  component "Runbook" as Runbook <<incident>>
-  component "Vercel Rollback" as Rollback <<incident>>
+  component "Runbook\n(SOP Ứng phó sự cố)" as Runbook <<incident>>
+  component "Vercel Rollback\n(Instant Instant Recovery)" as Rollback <<incident>>
 }
 
 Runbook -[#DC2626]-> ContractGate : explicit approval
 
-' ======================= WATCHABILITY (signals that require ownership) =======================
+' ==============================================================================
+' SECTION 14: TO-WATCH REGISTER & BOTTLENECK MONITORING (SỔ THEO DÕI NGHẼN HỆ THỐNG)
+' Nghiệp vụ: Đăng ký và theo dõi chủ động các nguy cơ nghẽn hạ tầng kho:
+' - Release ID / Tag: Gắn nhãn commit để liên kết log, trace và crash report.
+' - Migration Duration Watch: Giám sát thời gian chạy DDL tránh lock bảng sản phẩm/movements.
+' - Connection Pool Saturation Watch: Theo dõi số lượng connection vào Supavisor (giới hạn free-tier).
+' - Cache Hit / Memory Watch: Kiểm soát tỷ lệ trúng cache và rò rỉ bộ nhớ.
+' - To-Watch Register: Bảng phân công trách nhiệm giải quyết nguy cơ phân theo độ ưu tiên (P0 · P1 · P2).
+' ==============================================================================
 package "Operations · To-Watch register" <<alert>> {
   component "Release ID /\nversion tag" as ReleaseTag <<trace>>
   component "Migration lock +\nduration watch" as MigrationWatch <<alert>>
@@ -276,7 +404,15 @@ TeleBot -[#DC2626]-> OnCall : notify
 OnCall -[#DC2626]-> Runbook : decide
 Runbook -[#DC2626]-> Rollback : bad deploy
 
-' ======================= DASHBOARDS (single, clean sink) =======================
+' ==============================================================================
+' SECTION 15: VISUALIZATION & UNIFIED DASHBOARDS (GIAO DIỆN QUAN SÁT TẬP TRUNG)
+' Nghiệp vụ: Cổng tra cứu trực quan số liệu nghiệp vụ và trạng thái hạ tầng:
+' - Vercel Dashboard: Giám sát băng thông, thời gian phản hồi API và deployment status.
+' - Supabase Dashboard: Tra cứu trực tiếp bảng kho, SQL Editor, biểu đồ tài nguyên và RLS.
+' - Sentry Dashboard: Phân tích lỗi ứng dụng chi tiết, breadcrumbs và stack trace.
+' - Bugsink Dashboard: Tra cứu lưu trữ sự kiện sự cố nội bộ thông qua Tailscale mạng riêng.
+' - Uptime Kuma UI: Theo dõi thời gian hoạt động (99.9% uptime SLA) và độ trễ PostgREST.
+' ==============================================================================
 package "Dashboards · human view" <<viz>> {
   component "Vercel Dashboard" as VD <<viz>>
   component "Supabase Dashboard" as SD <<viz>>
@@ -302,63 +438,95 @@ Owner --> BGD : Tailscale client
 Partner --> VD : observe release health
 Partner --> SD : investigate data / logs
 
+' ==============================================================================
+' OPERATIONAL & ARCHITECTURAL ANNOTATIONS (CHÚ THÍCH KỸ THUẬT & RÀNG BUỘC NGHIỆP VỤ)
+' ==============================================================================
 note bottom of WAF
-  Blocks bad requests before they reach code.
-end note
-note bottom of VercelBuild
-  Automatic build from the GitHub webhook.
-end note
-note bottom of TraceCtx
-  One trace ID spans middleware, app, and DB.
-end note
-note bottom of UptimeStore
-  Two independent watchers reduce a single point of failure.
-end note
-note bottom of Runbook
-  Human-approved rollback; never fully automatic.
-end note
-note bottom of DNS
-  No custom domain: Cloudflare DNS / Tunnel / Access are not used.
-  The Cloudflare free account is only an optional Workers + Queues relay.
-end note
-note bottom of SentryAlert
-  * Developer (free) plan: email alerts are confirmed; webhook / integrations
-  must be verified after the 14-day Business trial ends.
-  Fallback: email → small parser on EliteDesk → Telegram.
-end note
-note bottom of MuxTransport
-  Strict rules live in the matcher, not beforeSend (matcher runs after beforeSend).
-  Send traces / replays to Sentry only; Bugsink accepts errors only.
-end note
-note bottom of Funnel
-  Needs MagicDNS + HTTPS certs + "funnel" nodeAttr. Ports 443 / 8443 / 10000 only.
-  Non-configurable bandwidth cap; no auth layer. A port is Serve (private) or Funnel (public).
-  Test from mobile data: a tailnet device reaches the host directly, not via the relay.
-end note
-note bottom of Bugsink
-  Independent demo backend; loose rules; no tracing or replay.
-  Retention is count-based (no 30-day cutoff). Alert channels on self-hosted: verify.
-  BASE_URL = public Funnel URL; check allowed-hosts / CSRF for the :8443 dashboard.
-end note
-note bottom of CompatGate
-  Roll back code safely only while the old version can still read/write
-  the expanded schema. Never deploy destructive DDL with its first use.
+  Chặn các yêu cầu độc hại (SQL Injection, XSS, Bad User-Agent)
+  trước khi tiếp cận mã nguồn Route Handlers.
 end note
 
+note bottom of RouteHandler
+  <b>Core Inventory Business Logic</b>:
+  - Auth: Xác thực JWT Supabase và kiểm tra RBAC (Admin, Staff, Viewer).
+  - Stock Movements: Chạy giao dịch nguyên tử (SELECT ... FOR UPDATE)
+    khóa dòng sản phẩm, chống race condition và xuất vượt tồn kho.
+  - Phase 6 Analytics: Tổng hợp trend theo ngày/tuần/tháng và định giá tồn kho
+    (stock_quantity * cost_price). Xuất CSV UTF-8 BOM chống Formula Injection.
+end note
+
+note bottom of VercelBuild
+  Tự động kích hoạt build, kiểm tra type-check và linting
+  ngay khi có commit mới từ GitHub webhook.
+end note
+
+note bottom of TraceCtx
+  Mã định danh duy nhất (W3C traceparent) nối liền vết từ
+  Middleware -> Application API -> Supavisor Database Pooler.
+end note
+
+note bottom of UptimeStore
+  Cơ chế giám sát kép (Dual Independent Watchers):
+  GitHub Actions (Cloud) + HP EliteDesk (On-Premise) triệt tiêu điểm nghẽn đơn lẻ (SPOF)
+  và duy trì trạng thái hoạt động của Supabase Free Tier.
+end note
+
+note bottom of Runbook
+  Sổ tay ứng cứu sự cố kho: Mọi thao tác rollback mã nguồn hoặc
+  phục hồi cơ sở dữ liệu đều bắt buộc có sự xác nhận của kỹ sư trực vận hành.
+end note
+
+note bottom of DNS
+  Mô hình hiện thực gói miễn phí (Free-tier reality):
+  Không sử dụng custom domain, chạy trực tiếp trên *.vercel.app.
+  Cloudflare DNS / Tunnel / Access không kích hoạt trong cấu hình chuẩn.
+end note
+
+note bottom of SentryAlert
+  * Sentry Developer Plan: Hỗ trợ cảnh báo qua Email;
+  kết hợp webhook chuyển tiếp tới Telegram Bot để trực ban 24/7.
+end note
+
+note bottom of MuxTransport
+  Multiplexed Error Routing:
+  - Sentry Cloud: Chỉ thu nạp lỗi nghiêm trọng (Unhandled / P0), bảo vệ hạn ngạch 5k events/tháng.
+  - Bugsink (HP Node): Thu nạp 100% exception phát sinh phục vụ debug và kiểm thử dev.
+end note
+
+note bottom of Funnel
+  Tailscale Funnel mở cổng an toàn :443 trên tên miền *.ts.net
+  chỉ phục vụ ingest lỗi từ Vercel vào Bugsink. Không mở dashboard ra Internet.
+end note
+
+note bottom of Bugsink
+  Máy chủ thu thập lỗi tự lưu trữ trên Docker (HP EliteDesk).
+  Dữ liệu lưu trữ theo số lượng (count-based), truy cập an toàn qua cổng :8443 (Tailscale Serve).
+end note
+
+note bottom of CompatGate
+  Quy tắc Zero-Downtime Database Migration:
+  Chỉ triển khai mã nguồn mới khi schema database đã được mở rộng tương thích (Expand).
+  Tuyệt đối không xóa cột cũ (Contract) khi phiên bản code cũ vẫn đang vận hành.
+end note
+
+' ==============================================================================
+' DIAGRAM LEGEND (CHÚ GIẢI THỨ TỰ ĐỌC & MÃ MÀU LIÊN KẾT)
+' ==============================================================================
 legend right
-  <b>Reading order</b>
-  1. Request: People → Edge → Runtime → Cache / Data
-  2. Delivery is above; telemetry is below the runtime
-  3. Operations and dashboards are the right-side outcomes
-  4. Free-tier caveats are marked by notes (DNS, Sentry Alert, Funnel, Bugsink, Backup)
+  <b>Thứ tự đọc luồng kiến trúc (Reading Order)</b>
+  1. Luồng yêu cầu (Request): People → Edge → Next.js Runtime → Cache / Supabase Data
+  2. Giao vận mã nguồn (Delivery CI/CD & Schema Evolution) đặt ở phía trên runtime
+  3. Đo lường & Truy vết (Telemetry, Tracing & Error Muxing) đặt ở phía dưới runtime
+  4. Vận hành, Giám sát, Sổ tay cảnh báo và Dashboard trực quan nằm ở cánh phải
+  5. Các ràng buộc gói miễn phí & nghiệp vụ kho được chú thích chi tiết tại các khối Note
   ----
-  <b>Line colours</b>
-  <color:#2563EB>Blue</color>: request path
-  <color:#0F766E>Teal</color>: cache / data path
-  <color:#D97706>Amber</color>: delivery / schema evolution
-  <color:#7C3AED>Purple</color>: telemetry / tracing
-  <color:#BE123C>Wine</color>: security / recovery guardrail
-  <color:#DC2626>Red</color>: actionable alert / incident
-  Grey: contextual / dashboard relationship
+  <b>Mã màu liên kết (Line Colours)</b>
+  <color:#2563EB>Blue</color>: Luồng yêu cầu nghiệp vụ chính (Request path)
+  <color:#0F766E>Teal</color>: Luồng truy vấn cơ sở dữ liệu & bộ nhớ đệm (Cache / Data path)
+  <color:#D97706>Amber</color>: Quy trình giao vận CI/CD & Tiến hóa DB (Delivery / Schema evolution)
+  <color:#7C3AED>Purple</color>: Luồng dữ liệu giám sát & Truy vết lỗi (Telemetry / Tracing)
+  <color:#BE123C>Wine</color>: Hàng rào bảo mật RLS & Kiểm soát phục hồi (Security / Recovery guardrail)
+  <color:#DC2626>Red</color>: Cảnh báo sự cố khẩn cấp & Sổ tay ứng phó (Actionable alert / Incident)
+  Grey: Liên kết ngữ cảnh phụ & Bảng điều khiển quan sát (Contextual / Dashboard relationship)
 endlegend
 @enduml
