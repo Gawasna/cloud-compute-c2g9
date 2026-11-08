@@ -40,6 +40,22 @@ describe("Telemetry Swagger & Multi-Mode Error Dispatch", () => {
 
     assert.ok(spec.components.securitySchemes.SecretKeyHeader);
     assert.ok(spec.components.securitySchemes.SecretKeyQuery);
+    assert.ok(spec.components.securitySchemes.BearerAuth);
+
+    // Validate expanded business API paths
+    assert.ok(spec.paths["/api/auth/login"], "OpenAPI must include auth login route");
+    assert.ok(spec.paths["/api/auth/logout"], "OpenAPI must include auth logout route");
+    assert.ok(spec.paths["/api/auth/me"], "OpenAPI must include auth me route");
+    assert.ok(spec.paths["/api/products"], "OpenAPI must include products route");
+    assert.ok(spec.paths["/api/movements"], "OpenAPI must include stock movements route");
+    assert.ok(spec.paths["/api/reports/overview"], "OpenAPI must include reports overview route");
+    assert.ok(spec.paths["/api/users"], "OpenAPI must include user management route");
+  });
+
+  it("should have Swagger UI distribution package installed and exportable", async () => {
+    const swaggerModule = await import("swagger-ui-dist");
+    assert.ok(swaggerModule.SwaggerUIBundle, "Must export SwaggerUIBundle");
+    assert.ok(swaggerModule.SwaggerUIStandalonePreset, "Must export SwaggerUIStandalonePreset");
   });
 
   it("should have Swagger UI interactive page component at src/app/swagger/page.tsx", () => {
