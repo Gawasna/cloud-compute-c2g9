@@ -12,6 +12,7 @@ const { primaryDsn, isSentryValid } = resolveTelemetryConfig();
 
 Sentry.init({
   dsn: primaryDsn,
+  environment: process.env.NODE_ENV || "development",
 
   // Adjust this value in production, or use tracesSampler for greater control
   tracesSampleRate: isSentryValid ? 1.0 : 0.0,

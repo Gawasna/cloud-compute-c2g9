@@ -25,4 +25,7 @@ export default withSentryConfig(nextConfig, {
   silent: true,
   org: process.env.SENTRY_ORG || "gawasu",
   project: process.env.SENTRY_PROJECT || "cloudstock",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  tunnelRoute: "/monitoring-tunnel",
+  widenClientFileUpload: true,
 });
