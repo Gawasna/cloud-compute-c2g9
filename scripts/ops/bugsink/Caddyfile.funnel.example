@@ -1,10 +1,13 @@
 # ==============================================================================
-# Caddyfile Example for Bugsink Ingest Reverse Proxy over Tailscale Funnel
+# Caddyfile Example for Bugsink Ingest Reverse Proxy behind Tailscale Funnel (v1.52+)
 # Target Architecture: MASTER_INFRA.puml (Self-hosted IngestProxy)
+#
+# Tailscale Funnel terminates public HTTPS 443 at your *.ts.net domain and
+# forwards cleartext HTTP to Caddy on local port 35880 (HP dynamic port range):
+#   $ sudo tailscale funnel --bg 35880
 # ==============================================================================
 
-# Replace with your actual Tailscale machine Funnel domain
-https://elitedesk-hp.tailnet-xyz.ts.net:443 {
+:35880 {
     # 1. Rate limiting (protects HP Core i5 8500T 35W TDP against DoS spam)
     # rate_limit {
     #     zone bugsink_ingest {
