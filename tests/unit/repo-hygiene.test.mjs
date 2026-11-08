@@ -53,7 +53,13 @@ describe("Security: repository hygiene", () => {
   it("every mutating API route requires authentication and a role check", () => {
     const routes = walk("src/app/api").filter((f) => f.endsWith("route.ts"));
     const roleExempt = new Set(["src/app/api/auth/me/route.ts"].map((p) => p.replaceAll("/", process.platform === "win32" ? "\\" : "/")));
-    const open = new Set(["src/app/api/health/route.ts", "src/app/api/debug/telemetry/route.ts"].map((p) => p.replaceAll("/", process.platform === "win32" ? "\\" : "/")));
+    const open = new Set([
+      "src/app/api/health/route.ts",
+      "src/app/api/debug/telemetry/route.ts",
+      "src/app/api/auth/login/route.ts",
+      "src/app/api/auth/refresh/route.ts",
+      "src/app/api/auth/logout/route.ts",
+    ].map((p) => p.replaceAll("/", process.platform === "win32" ? "\\" : "/")));
     for (const f of routes) {
       if (open.has(f)) continue;
       const s = readFileSync(f, "utf8");

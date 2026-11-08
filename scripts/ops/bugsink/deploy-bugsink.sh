@@ -61,13 +61,15 @@ fi
 if [[ ! -f "${ENV_FILE}" ]]; then
     echo "[INFO] Generating random secret key in: ${ENV_FILE}"
     SECRET_KEY_GEN=$(openssl rand -hex 32)
+    ADMIN_PASS_GEN=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9')
+    DETECTED_TS_IP=$(tailscale ip -4 2>/dev/null || echo "127.0.0.1")
     cat <<EOF > "${ENV_FILE}"
 BUGSINK_PORT=35800
-BUGSINK_TAILSCALE_IP=100.103.109.18
+BUGSINK_TAILSCALE_IP=${DETECTED_TS_IP}
 BUGSINK_SECRET_KEY=${SECRET_KEY_GEN}
-BUGSINK_SUPERUSER=admin@cloudstock.local:CloudStockOps2026!
+BUGSINK_SUPERUSER=admin@cloudstock.local:${ADMIN_PASS_GEN}
 BUGSINK_BASE_URL=http://127.0.0.1:35800
-BUGSINK_ALLOWED_HOSTS=127.0.0.1,localhost,100.103.109.18
+BUGSINK_ALLOWED_HOSTS=127.0.0.1,localhost,${DETECTED_TS_IP}
 EOF
     chmod 600 "${ENV_FILE}"
 fi
@@ -79,7 +81,7 @@ cd "${SCRIPT_DIR}"
 CONTAINER_NAME="ops_bugsink"
 PORT="${BUGSINK_PORT:-35800}"
 
-echo "[INFO] Target address: http://127.0.0.1:${PORT} and http://${BUGSINK_TAILSCALE_IP:-100.103.109.18}:${PORT}"
+echo "[INFO] Target address: http://127.0.0.1:${PORT} and http://${BUGSINK_TAILSCALE_IP:-127.0.0.1}:${PORT}"
 
 # Check port conflict before launching
 if ss -tuln | grep -q ":${PORT} "; then

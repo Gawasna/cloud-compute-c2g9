@@ -18,9 +18,9 @@ services:
     environment:
       - PORT=8000
       - SECRET_KEY=${BUGSINK_SECRET_KEY}
-      - CREATE_SUPERUSER=${BUGSINK_SUPERUSER:-admin@cloudstock.local:CloudStockOps2026!}
+      - CREATE_SUPERUSER=${BUGSINK_SUPERUSER:?SUPERUSER credential required}
       - BASE_URL=${BUGSINK_BASE_URL:-http://127.0.0.1:35800}
-      - ALLOWED_HOSTS=${BUGSINK_ALLOWED_HOSTS:-127.0.0.1,localhost,100.103.109.18}
+      - ALLOWED_HOSTS=${BUGSINK_ALLOWED_HOSTS:-127.0.0.1,localhost}
       - DATABASE_PATH=/data/db.sqlite3
       - SNAPPEA_NUM_WORKERS=1
       - PHONEHOME=False

@@ -72,3 +72,6 @@ trace/
 scripts/ops/**/data/
 scripts/ops/**/.env
 
+# Binary presentations
+*.pptx
+
