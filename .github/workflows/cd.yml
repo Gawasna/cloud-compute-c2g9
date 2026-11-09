@@ -1,0 +1,301 @@
+name: CD Release Pipeline
+
+# Trigger exclusively on semver tags (v1.2.3).
+# CI must have already passed on master before tagging — this workflow does NOT re-run CI gates.
+# Flow: smoke-test (Vercel deployment ready check + API health + security) -> create-github-release
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write  # Required for gh release create
+
+concurrency:
+  group: cd-release-${{ github.ref }}
+  cancel-in-progress: false  # Never cancel an in-flight release
+
+env:
+  PRODUCTION_URL: 'https://cloud-compute-c2g9.vercel.app'
+  HEALTH_ENDPOINT: 'https://cloud-compute-c2g9.vercel.app/api/health'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1: Wait for Vercel deployment to reach READY state, then run smoke tests.
+  # ---------------------------------------------------------------------------
+  smoke-test:
+    name: Deployment Smoke Test & Security Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    outputs:
+      deployment_url: ${{ steps.poll_vercel.outputs.deployment_url }}
+      deployment_id: ${{ steps.poll_vercel.outputs.deployment_id }}
+
+    steps:
+      - name: Checkout repository at tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for git log in release notes job
+
+      - name: Poll Vercel API until production deployment is READY
+        id: poll_vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "Waiting for Vercel production deployment triggered by tag: $TAG_NAME"
+
+          # Vercel API base URL
+          API_BASE="https://api.vercel.com"
+
+          # Build query string with optional team scope
+          if [ -n "$VERCEL_TEAM_ID" ]; then
+            TEAM_PARAM="&teamId=${VERCEL_TEAM_ID}"
+          else
+            TEAM_PARAM=""
+          fi
+
+          MAX_ATTEMPTS=30   # 30 * 20s = 10 minutes max wait
+          ATTEMPT=0
+          DEPLOYMENT_URL=""
+          DEPLOYMENT_ID=""
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Poll attempt $ATTEMPT/$MAX_ATTEMPTS..."
+
+            # Fetch last 5 deployments for this project, targeting production target
+            RESPONSE=$(curl -sf \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              "${API_BASE}/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=5${TEAM_PARAM}" \
+              2>&1) || {
+              echo "::warning::Vercel API request failed on attempt $ATTEMPT. Retrying in 20s..."
+              sleep 20
+              continue
+            }
+
+            # Extract the most recent deployment state
+            STATE=$(echo "$RESPONSE" | jq -r '.deployments[0].state // empty')
+            DEP_URL=$(echo "$RESPONSE" | jq -r '.deployments[0].url // empty')
+            DEP_ID=$(echo "$RESPONSE" | jq -r '.deployments[0].uid // empty')
+
+            echo "Latest production deployment: id=$DEP_ID state=$STATE url=$DEP_URL"
+
+            if [ "$STATE" = "READY" ]; then
+              echo "Vercel deployment is READY."
+              DEPLOYMENT_URL="https://${DEP_URL}"
+              DEPLOYMENT_ID="$DEP_ID"
+              break
+            elif [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; then
+              echo "::error::Vercel deployment reached terminal failure state: $STATE"
+              exit 1
+            fi
+
+            sleep 20
+          done
+
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "::warning::Vercel API polling timed out. Falling back to known production URL."
+            DEPLOYMENT_URL="${PRODUCTION_URL}"
+            DEPLOYMENT_ID="unknown"
+          fi
+
+          echo "deployment_url=${DEPLOYMENT_URL}" >> "$GITHUB_OUTPUT"
+          echo "deployment_id=${DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test — API health endpoint (database connectivity gate)
+        run: |
+          TARGET="${{ env.HEALTH_ENDPOINT }}"
+          echo "Running health probe against: $TARGET"
+
+          # Allow up to 3 retries to handle cold start latency on Vercel Serverless
+          for i in 1 2 3; do
+            HTTP_RESPONSE=$(curl -sf -w "\n%{http_code}" -m 15 "$TARGET" 2>&1) && break
+            echo "Attempt $i failed. Waiting 10s before retry..."
+            sleep 10
+          done
+
+          STATUS_CODE=$(echo "$HTTP_RESPONSE" | tail -n 1)
+          BODY=$(echo "$HTTP_RESPONSE" | head -n -1)
+
+          echo "HTTP Status: $STATUS_CODE"
+          echo "Body: $BODY"
+
+          if [ "$STATUS_CODE" != "200" ]; then
+            echo "::error::Health endpoint returned $STATUS_CODE (expected 200). Deployment gate FAILED."
+            exit 1
+          fi
+
+          DB_STATUS=$(echo "$BODY" | jq -r '.database.status // empty' 2>/dev/null || true)
+          if [ "$DB_STATUS" != "connected" ]; then
+            echo "::error::Database status is '$DB_STATUS' (expected: connected). Deployment gate FAILED."
+            exit 1
+          fi
+
+          LATENCY=$(echo "$BODY" | jq -r '.database.latency_ms // "N/A"' 2>/dev/null || echo "N/A")
+          echo "Health gate PASSED. DB status=connected, latency=${LATENCY}ms"
+
+      - name: Smoke test — Security headers validation
+        run: |
+          TARGET="${{ env.PRODUCTION_URL }}"
+          echo "Probing security headers on: $TARGET"
+
+          HEADERS=$(curl -sI -m 10 "$TARGET")
+
+          check_header() {
+            local HEADER_NAME="$1"
+            local EXPECTED_VALUE="$2"
+            local ACTUAL
+            ACTUAL=$(echo "$HEADERS" | grep -i "^${HEADER_NAME}:" | head -1 || true)
+            if [ -z "$ACTUAL" ]; then
+              echo "::error::Missing security header: $HEADER_NAME"
+              return 1
+            fi
+            if [ -n "$EXPECTED_VALUE" ]; then
+              if ! echo "$ACTUAL" | grep -qi "$EXPECTED_VALUE"; then
+                echo "::warning::Header $HEADER_NAME present but value does not match '$EXPECTED_VALUE'. Actual: $ACTUAL"
+              fi
+            fi
+            echo "OK: $ACTUAL"
+          }
+
+          FAIL=0
+          check_header "X-Content-Type-Options" "nosniff"      || FAIL=1
+          check_header "X-Frame-Options" ""                    || FAIL=1
+          check_header "Strict-Transport-Security" "max-age"   || FAIL=1
+
+          if [ $FAIL -ne 0 ]; then
+            echo "::error::Security headers gate FAILED."
+            exit 1
+          fi
+          echo "Security headers gate PASSED."
+
+      - name: Smoke test — WAF probe (unauthenticated SQLi attempt must not reach DB)
+        run: |
+          TARGET="${{ env.PRODUCTION_URL }}/api/categories?id=1+UNION+SELECT+1--"
+          echo "WAF probe: $TARGET"
+
+          STATUS=$(curl -so /dev/null -w "%{http_code}" -m 10 "$TARGET")
+          echo "WAF probe response: $STATUS"
+
+          # 401 (auth guard fires before WAF on protected routes) or 403 (WAF block) are both acceptable.
+          # 200 or 500 indicate the probe reached application logic — gate fails.
+          if [ "$STATUS" = "200" ] || [ "$STATUS" = "500" ]; then
+            echo "::error::WAF probe returned $STATUS — SQLi probe may have reached application layer. Gate FAILED."
+            exit 1
+          fi
+          echo "WAF probe gate PASSED (HTTP $STATUS)."
+
+  # ---------------------------------------------------------------------------
+  # JOB 2: Create GitHub Release with auto-generated changelog.
+  # Runs only after smoke-test passes.
+  # ---------------------------------------------------------------------------
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [smoke-test]
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository at tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve previous semver tag for changelog range
+        id: prev_tag
+        run: |
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+          echo "Current release tag: $CURRENT_TAG"
+
+          # Find the most recent semver tag that precedes the current one
+          PREV_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' \
+            | sort -V \
+            | grep -v "^${CURRENT_TAG}$" \
+            | tail -1 || true)
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous semver tag found. Using first commit as changelog base."
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+
+          echo "Changelog range: $PREV_TAG..$CURRENT_TAG"
+          echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate structured changelog from Conventional Commits
+        id: changelog
+        run: |
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+          PREV_TAG="${{ steps.prev_tag.outputs.prev_tag }}"
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          # Gather commits in range, formatted as: <hash> <subject>
+          COMMITS=$(git log "${PREV_TAG}..${CURRENT_TAG}" \
+            --pretty=format:"%H %s" \
+            --no-merges 2>/dev/null || git log --pretty=format:"%H %s" --no-merges)
+
+          build_section() {
+            local LABEL="$1"
+            local PATTERN="$2"
+            local LINES=""
+            while IFS= read -r LINE; do
+              HASH=$(echo "$LINE" | awk '{print $1}')
+              SUBJECT=$(echo "$LINE" | cut -d' ' -f2-)
+              SHORT="${HASH:0:7}"
+              if echo "$SUBJECT" | grep -qiE "^${PATTERN}"; then
+                LINES="${LINES}- ${SUBJECT} ([${SHORT}](${REPO_URL}/commit/${HASH}))\n"
+              fi
+            done <<< "$COMMITS"
+            if [ -n "$LINES" ]; then
+              echo "### ${LABEL}"
+              printf "%b" "$LINES"
+              echo ""
+            fi
+          }
+
+          NOTES=""
+          NOTES+="## What's Changed\n\n"
+          NOTES+=$(build_section "Features"         "feat(\(.*\))?!?:")
+          NOTES+=$(build_section "Bug Fixes"        "fix(\(.*\))?!?:")
+          NOTES+=$(build_section "Performance"      "perf(\(.*\))?!?:")
+          NOTES+=$(build_section "Security"         "sec(\(.*\))?!?:|security")
+          NOTES+=$(build_section "Refactoring"      "refactor(\(.*\))?!?:")
+          NOTES+=$(build_section "Documentation"    "docs(\(.*\))?!?:")
+          NOTES+=$(build_section "CI / Tooling"     "ci(\(.*\))?!?:|chore(\(.*\))?!?:|build(\(.*\))?!?:")
+          NOTES+=$(build_section "Tests"            "test(\(.*\))?!?:")
+
+          NOTES+="\n---\n"
+          NOTES+="**Full diff:** [${PREV_TAG}...${CURRENT_TAG}](${REPO_URL}/compare/${PREV_TAG}...${CURRENT_TAG})\n"
+          NOTES+="**Production URL:** ${{ env.PRODUCTION_URL }}\n"
+          NOTES+="**Deployment ID:** ${{ needs.smoke-test.outputs.deployment_id }}\n"
+
+          printf "%b" "$NOTES" > /tmp/release_notes.md
+          echo "Release notes written to /tmp/release_notes.md"
+          cat /tmp/release_notes.md
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          # Determine if this is a pre-release (e.g., v1.0.0-beta.1, v1.0.0-rc.1)
+          if echo "$TAG" | grep -qE '\-(alpha|beta|rc|pre)'; then
+            PRERELEASE_FLAG="--prerelease"
+            echo "Marking as pre-release."
+          else
+            PRERELEASE_FLAG=""
+          fi
+
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title "Release ${TAG}" \
+            --notes-file /tmp/release_notes.md \
+            $PRERELEASE_FLAG \
+            --verify-tag
+
+          echo "GitHub Release created: ${TAG}"
+          echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
