@@ -18,26 +18,32 @@ interface DatabaseHealth {
  * 1. Responds to external watchdog heartbeats (e.g., Uptime Kuma on HP Node).
  * 2. Actively pings Supabase PostgREST to generate DB query activity,
  *    preventing Supabase Free Tier auto-pause after 7 days of inactivity.
+ *    Note: The root OpenAPI endpoint (${supabaseUrl}/rest/v1/) strictly requires
+ *    the service_role API key on Supabase Gateway to inspect schema metadata.
  */
 export async function GET() {
   const startTime = Date.now();
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)?.replace(/\/$/, "");
+  // Prioritize privileged service_role key on server runtime to satisfy Supabase PostgREST root gateway requirement
+  const apiKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   let dbHealth: DatabaseHealth = {
     status: "unconfigured",
     latency_ms: null,
   };
 
-  if (supabaseUrl && anonKey && !supabaseUrl.includes("your-project-ref")) {
+  if (supabaseUrl && apiKey && !supabaseUrl.includes("your-project-ref")) {
     const pingStart = Date.now();
     try {
       // Actively queries Supabase PostgREST gateway to keep connection alive
       const response = await fetch(`${supabaseUrl}/rest/v1/`, {
         method: "GET",
         headers: {
-          apikey: anonKey,
-          Authorization: `Bearer ${anonKey}`,
+          apikey: apiKey,
+          Authorization: `Bearer ${apiKey}`,
         },
         signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
         cache: "no-store",
