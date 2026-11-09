@@ -1,11 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { RateLimiter, getClientIp } from "@/lib/security/rate-limit";
 import { isRequestAllowedCsrf } from "@/lib/security/csrf";
+import { inspectRequestWaf } from "@/lib/security/waf";
 
 /**
  * Edge-of-app request gate (Next.js 16 `proxy`, formerly `middleware`).
- * Applies a per-IP, per-instance rate limit to /api/* as a best-effort abuse brake.
- * Health checks are exempt so uptime monitors are never throttled.
+ * Applies Edge WAF inspection, CSRF origin verification, and a per-IP,
+ * per-instance rate limit to /api/* as a multi-tier defense boundary.
+ * Health checks are exempt from rate limiting so uptime monitors are never throttled.
  */
 const globalForLimiters = globalThis as unknown as {
   __apiReadLimiter?: RateLimiter;
@@ -21,10 +23,26 @@ const exportLimiter = (globalForLimiters.__apiExportLimiter ??= new RateLimiter(
 const loginLimiter = (globalForLimiters.__apiLoginLimiter ??= new RateLimiter(10, 60_000));
 
 export function proxy(request: NextRequest) {
+  // 1. Edge WAF inspection: drop malicious probes, traversal sequences, SQLi patterns, and scanner bots.
+  const wafResult = inspectRequestWaf(request);
+  if (!wafResult.allowed) {
+    return NextResponse.json(
+      { message: "Yêu cầu bị từ chối bởi bộ lọc an ninh (WAF)." },
+      {
+        status: 403,
+        headers: {
+          "Cache-Control": "no-store",
+          "X-WAF-Block": "true",
+          "X-WAF-Rule": wafResult.rule ?? "UNKNOWN",
+        },
+      }
+    );
+  }
+
   const { pathname } = request.nextUrl;
   if (pathname === "/api/health") return NextResponse.next();
 
-  // CSRF: cookie-authenticated, state-changing requests must come from our own origin.
+  // 2. CSRF: cookie-authenticated, state-changing requests must come from our own origin.
   const allowed = isRequestAllowedCsrf({
     method: request.method,
     origin: request.headers.get("origin"),
@@ -39,6 +57,7 @@ export function proxy(request: NextRequest) {
     );
   }
 
+  // 3. Per-IP rate limiting
   const ip = getClientIp(request.headers);
   const isLogin = pathname === "/api/auth/login";
   const isExport = pathname.startsWith("/api/reports/export");
