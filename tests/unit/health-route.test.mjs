@@ -45,4 +45,17 @@ describe("Unit: Production Health Route & Keep-Alive Integrity", () => {
       "Health route response payload must include database status field"
     );
   });
+
+  it("should prioritize SUPABASE_SERVICE_ROLE_KEY to satisfy Supabase PostgREST root gateway auth", () => {
+    const content = fs.readFileSync(routeFilePath, "utf8");
+
+    assert.ok(
+      content.includes("SUPABASE_SERVICE_ROLE_KEY"),
+      "Health route must prioritize SUPABASE_SERVICE_ROLE_KEY for root PostgREST OpenAPI spec endpoint"
+    );
+    assert.ok(
+      content.includes("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+      "Health route must retain fallback to NEXT_PUBLIC_SUPABASE_ANON_KEY for non-privileged environments"
+    );
+  });
 });
