@@ -44,6 +44,7 @@ describe("Unit: Next.js API Route Handlers Integrity & Security", () => {
       "src/lib/auth/token.ts",
       "src/lib/auth/types.ts",
       "src/lib/api/errors.ts",
+      "src/lib/api/handler.ts",
       "src/lib/utils/validation.ts",
     ];
 

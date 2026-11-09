@@ -5,6 +5,7 @@ export type { Role, AuthUser, VerifiedTokenUser, UserProfile } from "./types";
 
 // 2. HTTP Presentation & Shared Validation
 export { ApiError, handleApiError } from "@/lib/api/errors";
+export { createApiHandler, type ApiHandlerContext, type ApiHandlerOptions, type ApiRouteFn } from "@/lib/api/handler";
 export { isValidUuid } from "@/lib/utils/validation";
 
 // 3. Cryptographic Token Mechanism & State Lifecycle

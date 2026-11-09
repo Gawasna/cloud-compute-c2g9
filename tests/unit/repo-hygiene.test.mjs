@@ -63,9 +63,10 @@ describe("Security: repository hygiene", () => {
     for (const f of routes) {
       if (open.has(f)) continue;
       const s = readFileSync(f, "utf8");
-      assert.ok(s.includes("authenticateUser(request)"), `${f} must authenticate`);
-      if (!roleExempt.has(f)) assert.ok(s.includes("requireRoles("), `${f} must authorise by role`);
-      assert.ok(s.includes("handleApiError"), `${f} must use the safe error handler`);
+      const isHof = s.includes("createApiHandler");
+      assert.ok(s.includes("authenticateUser(request)") || isHof, `${f} must authenticate`);
+      if (!roleExempt.has(f)) assert.ok(s.includes("requireRoles(") || (isHof && s.includes("roles:")), `${f} must authorise by role`);
+      assert.ok(s.includes("handleApiError") || isHof, `${f} must use the safe error handler`);
     }
   });
 

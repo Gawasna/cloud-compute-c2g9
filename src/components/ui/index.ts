@@ -33,3 +33,6 @@ export type { ToastProps } from './Toast';
 
 export { default as Modal } from './Modal';
 export type { ModalProps } from './Modal';
+
+export { SafeBoundary, withErrorBoundary } from './ErrorBoundary';
+export type { SafeBoundaryProps } from './ErrorBoundary';

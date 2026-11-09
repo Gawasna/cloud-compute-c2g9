@@ -1,13 +1,10 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError } from "@/lib/auth/server";
+import { createApiHandler } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
-export async function GET(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin", "viewer"]);
-
+export const GET = createApiHandler(
+  async () => {
     const res = await query(`
       select id, name, sku, stock_quantity, minimum_stock,
         greatest(minimum_stock - stock_quantity, 0) as shortage,
@@ -18,7 +15,6 @@ export async function GET(request: Request) {
     `);
 
     return NextResponse.json(res.rows);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin", "viewer"] }
+);

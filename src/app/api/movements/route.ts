@@ -1,15 +1,11 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError } from "@/lib/auth/server";
+import { createApiHandler } from "@/lib/auth/server";
 import { query, withTransaction } from "@/lib/db/client";
 import { applyStockMovement, parseMovementInput } from "@/server/services/stock";
 
-export async function GET(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin", "staff"]);
-
-    const { searchParams } = new URL(request.url);
+export const GET = createApiHandler(
+  async (request, { searchParams }) => {
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 50));
 
     const res = await query(
@@ -22,23 +18,18 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json(res.rows);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin", "staff"] }
+);
 
-export async function POST(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin", "staff"]);
-
+export const POST = createApiHandler(
+  async (request, { user }) => {
     const body = await request.json().catch(() => ({}));
     const input = parseMovementInput(body);
 
-    const movement = await withTransaction((client) => applyStockMovement(client, input, user.id));
+    const movement = await withTransaction((client) => applyStockMovement(client, input, user!.id));
 
     return NextResponse.json(movement, { status: 201 });
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin", "staff"] }
+);

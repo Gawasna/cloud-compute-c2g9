@@ -1,13 +1,10 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError } from "@/lib/auth/server";
+import { createApiHandler } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
-export async function GET(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin", "viewer"]);
-
+export const GET = createApiHandler(
+  async () => {
     const result = await query(
       `select count(*)::int as total_products,
         coalesce(sum(stock_quantity), 0)::bigint as total_units,
@@ -19,7 +16,6 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json(result.rows[0]);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin", "viewer"] }
+);

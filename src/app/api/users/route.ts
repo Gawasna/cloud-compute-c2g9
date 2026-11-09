@@ -1,9 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import {
-  authenticateUser,
-  requireRoles,
-  handleApiError,
+  createApiHandler,
   ApiError,
   getSupabaseAdminClient,
   type Role,
@@ -22,11 +20,8 @@ function isValidEmail(email: string): boolean {
   return SAFE_EMAIL_REGEX.test(email);
 }
 
-export async function GET(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin"]);
-
+export const GET = createApiHandler(
+  async () => {
     const rowsRes = await query<{
       id: string;
       display_name: string;
@@ -58,16 +53,12 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json(result);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin"] }
+);
 
-export async function POST(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin"]);
-
+export const POST = createApiHandler(
+  async (request) => {
     const body = await request.json().catch(() => ({}));
     const name = String(body.displayName || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
@@ -119,7 +110,6 @@ export async function POST(request: Request) {
       },
       { status: 201 }
     );
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin"] }
+);

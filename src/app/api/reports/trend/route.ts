@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError } from "@/lib/auth/server";
+import { createApiHandler, ApiError } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
 type Period = "day" | "week" | "month";
@@ -10,15 +10,11 @@ const PERIOD_CONFIG: Record<Period, { step: string; count: number }> = {
   month: { step: "1 month", count: 12 },
 };
 
-export async function GET(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin", "staff", "viewer"]);
-
-    const url = new URL(request.url);
-    const rawPeriod = url.searchParams.get("period") || "day";
+export const GET = createApiHandler(
+  async (request, { searchParams }) => {
+    const rawPeriod = searchParams.get("period") || "day";
     if (!["day", "week", "month"].includes(rawPeriod)) {
-      return NextResponse.json({ message: "Kỳ báo cáo không hợp lệ" }, { status: 400 });
+      throw new ApiError(400, "Kỳ báo cáo không hợp lệ");
     }
     const period = rawPeriod as Period;
     const { step, count } = PERIOD_CONFIG[period];
@@ -50,7 +46,6 @@ export async function GET(request: Request) {
       timezone: "Asia/Ho_Chi_Minh",
       points: result.rows,
     });
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin", "staff", "viewer"] }
+);

@@ -1,13 +1,10 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError } from "@/lib/auth/server";
+import { createApiHandler } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
-export async function GET(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin", "staff", "viewer"]);
-
+export const GET = createApiHandler(
+  async () => {
     const [summaryResult, historyResult] = await Promise.all([
       query(`
         select
@@ -38,7 +35,6 @@ export async function GET(request: Request) {
       },
       history: historyResult.rows,
     });
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin", "staff", "viewer"] }
+);
