@@ -19,6 +19,7 @@ describe('Unit: CloudStock Home Route UI & Modular Architecture', () => {
     'src/components/ui/EmptyState.tsx',
     'src/components/ui/Toast.tsx',
     'src/components/ui/Modal.tsx',
+    'src/components/ui/BrandSplashScreen.tsx',
   ];
 
   const dashboardFiles = [
