@@ -64,6 +64,9 @@ skills-lock.json
 trace/
 specs/
 **.md
+# Canonical root-level markdown files must be tracked
+!CHANGELOG.md
+!README.md
 
 # Syncthing
 .stversions/
