@@ -1,15 +1,11 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid } from "@/lib/auth/server";
+import { createApiHandler, ApiError, isValidUuid } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 import { toSearchPattern } from "@/lib/utils/sql";
 
-export async function GET(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin", "staff", "viewer"]);
-
-    const { searchParams } = new URL(request.url);
+export const GET = createApiHandler(
+  async (request, { searchParams }) => {
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 20));
     const offset = (page - 1) * limit;
@@ -31,16 +27,12 @@ export async function GET(request: Request) {
       page,
       limit,
     });
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin", "staff", "viewer"] }
+);
 
-export async function POST(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin"]);
-
+export const POST = createApiHandler(
+  async (request) => {
     const body = await request.json().catch(() => ({}));
     const name = String(body.name || "").trim();
     const sku = String(body.sku || "").trim().toUpperCase();
@@ -70,7 +62,6 @@ export async function POST(request: Request) {
       [name, sku, categoryId, unitId, costPrice, minimumStock]
     );
     return NextResponse.json(res.rows[0], { status: 201 });
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin"] }
+);

@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useMemo,useState} from 'react';
 import {apiRequest,type ReportPeriod,type TrendResponse} from '@/lib/api/cloudstock';
+import {withErrorBoundary} from '@/components/ui';
 const labels:Record<ReportPeriod,string>={day:'Ngày',week:'Tuần',month:'Tháng'};
 const fmt=(iso:string,period:ReportPeriod)=>{
  const [y,m,d]=iso.split('-').map(Number);
@@ -8,7 +9,7 @@ const fmt=(iso:string,period:ReportPeriod)=>{
  if(period==='week')return `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}`;
  return `${d}/${m}`;
 };
-export default function MovementChart({title='Biến động nhập / xuất kho'}:{title?:string}){
+function MovementChartInner({title='Biến động nhập / xuất kho'}:{title?:string}){
  const [period,setPeriod]=useState<ReportPeriod>('day');
  const [data,setData]=useState<TrendResponse|null>(null);
  const [error,setError]=useState('');
@@ -37,3 +38,4 @@ export default function MovementChart({title='Biến động nhập / xuất kho
   </>}
  </section>
 }
+export default withErrorBoundary(MovementChartInner, { name: 'MovementChart' });

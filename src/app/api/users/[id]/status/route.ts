@@ -1,9 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import {
-  authenticateUser,
-  requireRoles,
-  handleApiError,
+  createApiHandler,
   ApiError,
   getSupabaseAdminClient,
   isValidUuid,
@@ -11,19 +9,13 @@ import {
 } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin"]);
-
-    const { id } = await params;
+export const PATCH = createApiHandler<{ id: string }>(
+  async (request, { params, user }) => {
+    const { id } = params;
     if (!isValidUuid(id)) {
       throw new ApiError(400, "Mã tài khoản không hợp lệ (yêu cầu định dạng UUID)");
     }
-    if (user.id === id) {
+    if (user?.id === id) {
       throw new ApiError(400, "Không thể tự khóa hoặc mở khóa tài khoản");
     }
 
@@ -58,14 +50,13 @@ export async function PATCH(
       );
       profileCache.delete(id); // lock/unlock takes effect immediately on this instance
       return NextResponse.json(result.rows[0]);
-    } catch (dbError) {
-      // Rollback Supabase Auth ban status if DB update fails
+    } catch (dbErr) {
+      // Best-effort rollback of Supabase Auth ban if DB update fails
       await admin.auth.admin.updateUserById(id, {
         ban_duration: existing.rows[0].is_active ? "none" : "876000h",
       });
-      throw dbError;
+      throw dbErr;
     }
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin"] }
+);

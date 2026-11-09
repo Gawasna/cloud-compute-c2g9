@@ -1,22 +1,17 @@
 import "server-only";
-import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError } from "@/lib/auth/server";
+import { createApiHandler, ApiError } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 import { encodeCsv } from "@/lib/utils/csv";
 
 // Bound memory/response size on serverless (Vercel limits execution time and response size).
 const MOVEMENT_EXPORT_LIMIT = 50_000;
 
-export async function GET(request: Request) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin", "viewer"]);
-
-    const url = new URL(request.url);
-    const kind = url.searchParams.get("kind") || "inventory";
+export const GET = createApiHandler(
+  async (request, { searchParams }) => {
+    const kind = searchParams.get("kind") || "inventory";
 
     if (!["inventory", "low-stock", "movements"].includes(kind)) {
-      return NextResponse.json({ message: "Loại báo cáo không hợp lệ" }, { status: 400 });
+      throw new ApiError(400, "Loại báo cáo không hợp lệ");
     }
 
     let columns: string[] = [];
@@ -99,7 +94,6 @@ export async function GET(request: Request) {
         ...(truncated ? { "X-Export-Truncated": "true" } : {}),
       },
     });
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin", "viewer"] }
+);

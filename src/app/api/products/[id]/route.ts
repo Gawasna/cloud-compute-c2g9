@@ -1,17 +1,11 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid } from "@/lib/auth/server";
+import { createApiHandler, ApiError, isValidUuid } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin"]);
-
-    const { id } = await params;
+export const PATCH = createApiHandler<{ id: string }>(
+  async (request, { params }) => {
+    const { id } = params;
     if (!isValidUuid(id)) {
       throw new ApiError(400, "Mã sản phẩm không hợp lệ (yêu cầu định dạng UUID)");
     }
@@ -50,20 +44,13 @@ export async function PATCH(
       throw new ApiError(404, "Không tìm thấy sản phẩm");
     }
     return NextResponse.json(res.rows[0]);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin"] }
+);
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin"]);
-
-    const { id } = await params;
+export const DELETE = createApiHandler<{ id: string }>(
+  async (_request, { params }) => {
+    const { id } = params;
     if (!isValidUuid(id)) {
       throw new ApiError(400, "Mã sản phẩm không hợp lệ (yêu cầu định dạng UUID)");
     }
@@ -78,7 +65,6 @@ export async function DELETE(
     }
 
     return NextResponse.json({ deleted: true });
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin"] }
+);

@@ -13,7 +13,8 @@ import {
 } from '@/lib/api/cloudstock';
 
 import { AppShell, type Page, type Role, ROLE_PERMISSIONS } from '@/components/layout';
-import { Toast } from '@/components/ui';
+import { Toast, SafeBoundary } from '@/components/ui';
+import { withClientHandler } from '@/lib/api/client-handler';
 import UserManagement from '@/components/UserManagement';
 
 import {
@@ -190,51 +191,58 @@ function DashboardContent({ identity }: DashboardProps) {
     setModalType('product');
   };
 
-  const handleDeleteProduct = async (prod: Product) => {
-    if (role !== 'admin') return;
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa sản phẩm "${prod.name}" (${prod.sku})?`)) {
-      return;
-    }
-
-    try {
+  const handleDeleteProduct = withClientHandler(
+    async (prod: Product) => {
+      if (role !== 'admin') return;
+      if (!window.confirm(`Bạn có chắc chắn muốn xóa sản phẩm "${prod.name}" (${prod.sku})?`)) {
+        return;
+      }
       await apiRequest(`/products/${prod.id}`, { method: 'DELETE' });
       await refreshData();
       showToast('Đã xóa sản phẩm thành công.');
-    } catch (err) {
-      setDataError(
-        err instanceof Error ? err.message : 'Không thể xóa sản phẩm đã chọn.'
-      );
+    },
+    {
+      source: 'dashboard.delete_product',
+      showToast,
+      onError: (err) => setDataError(err.message || 'Không thể xóa sản phẩm đã chọn.'),
     }
-  };
+  );
 
-  const handleSaveProduct = async (data: {
-    name: string;
-    sku: string;
-    categoryId: string;
-    unitId: string;
-    costPrice: number;
-    minimumStock: number;
-    initialStock: number;
-    editId?: string;
-  }) => {
-    if (role !== 'admin') return;
+  const handleSaveProduct = withClientHandler(
+    async (data: {
+      name: string;
+      sku: string;
+      categoryId: string;
+      unitId: string;
+      costPrice: number;
+      minimumStock: number;
+      initialStock: number;
+      editId?: string;
+    }) => {
+      if (role !== 'admin') return;
 
-    const isEdit = Boolean(data.editId);
-    await apiRequest(`/products${isEdit ? `/${data.editId}` : ''}`, {
-      method: isEdit ? 'PATCH' : 'POST',
-      body: JSON.stringify({
-        name: data.name,
-        sku: data.sku,
-        categoryId: data.categoryId,
-        unitId: data.unitId,
-        costPrice: data.costPrice,
-        minimumStock: data.minimumStock,
-      }),
-    });
+      const isEdit = Boolean(data.editId);
+      await apiRequest(`/products${isEdit ? `/${data.editId}` : ''}`, {
+        method: isEdit ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          name: data.name,
+          sku: data.sku,
+          categoryId: data.categoryId,
+          unitId: data.unitId,
+          costPrice: data.costPrice,
+          minimumStock: data.minimumStock,
+        }),
+      });
 
-    await refreshData();
-    showToast(isEdit ? 'Đã cập nhật sản phẩm thành công.' : 'Đã thêm sản phẩm thành công.');
-  };
+      await refreshData();
+      showToast(isEdit ? 'Đã cập nhật sản phẩm thành công.' : 'Đã thêm sản phẩm thành công.');
+    },
+    {
+      source: 'dashboard.save_product',
+      showToast,
+      onError: (err) => setDataError(err.message || 'Không thể lưu sản phẩm.'),
+    }
+  );
 
   // Stock Movement
   const handleOpenStockTicket = (sku?: string) => {
@@ -242,27 +250,34 @@ function DashboardContent({ identity }: DashboardProps) {
     setModalType('stock');
   };
 
-  const handleSaveStockTicket = async (data: {
-    productId: string;
-    type: 'IN' | 'OUT';
-    quantity: number;
-    note: string;
-  }) => {
-    if (role === 'viewer') return;
+  const handleSaveStockTicket = withClientHandler(
+    async (data: {
+      productId: string;
+      type: 'IN' | 'OUT';
+      quantity: number;
+      note: string;
+    }) => {
+      if (role === 'viewer') return;
 
-    await apiRequest('/movements', {
-      method: 'POST',
-      body: JSON.stringify({
-        productId: data.productId,
-        type: data.type,
-        quantity: data.quantity,
-        note: data.note,
-      }),
-    });
+      await apiRequest('/movements', {
+        method: 'POST',
+        body: JSON.stringify({
+          productId: data.productId,
+          type: data.type,
+          quantity: data.quantity,
+          note: data.note,
+        }),
+      });
 
-    await refreshData();
-    showToast('Đã lưu phiếu nhập / xuất kho thành công.');
-  };
+      await refreshData();
+      showToast('Đã lưu phiếu nhập / xuất kho thành công.');
+    },
+    {
+      source: 'dashboard.save_stock_ticket',
+      showToast,
+      onError: (err) => setDataError(err.message || 'Không thể lưu phiếu nhập / xuất kho.'),
+    }
+  );
 
   return (
     <AppShell
@@ -287,50 +302,64 @@ function DashboardContent({ identity }: DashboardProps) {
       )}
 
       {page === 'dashboard' && (
-        <OverviewTab
-          role={role}
-          loading={loading}
-          products={products}
-          dashboardStats={dashboardStats}
-          onNavigateTab={(tab) => handleSelectPage(tab)}
-        />
+        <SafeBoundary name="OverviewTab">
+          <OverviewTab
+            role={role}
+            loading={loading}
+            products={products}
+            dashboardStats={dashboardStats}
+            onNavigateTab={(tab) => handleSelectPage(tab)}
+          />
+        </SafeBoundary>
       )}
 
       {page === 'products' && (
-        <ProductsTab
-          role={role}
-          products={products}
-          onAddProduct={handleOpenAddProduct}
-          onEditProduct={handleOpenEditProduct}
-          onDeleteProduct={handleDeleteProduct}
-          onCreateStockTicket={handleOpenStockTicket}
-        />
+        <SafeBoundary name="ProductsTab">
+          <ProductsTab
+            role={role}
+            products={products}
+            onAddProduct={handleOpenAddProduct}
+            onEditProduct={handleOpenEditProduct}
+            onDeleteProduct={handleDeleteProduct}
+            onCreateStockTicket={handleOpenStockTicket}
+          />
+        </SafeBoundary>
       )}
 
       {page === 'categories' && (
-        <CategoriesTab categories={categories} products={products} />
+        <SafeBoundary name="CategoriesTab">
+          <CategoriesTab categories={categories} products={products} />
+        </SafeBoundary>
       )}
 
       {page === 'stock' && (
-        <StockMovementTab
-          products={products}
-          onCreateTicket={() => handleOpenStockTicket()}
-        />
+        <SafeBoundary name="StockMovementTab">
+          <StockMovementTab
+            products={products}
+            onCreateTicket={() => handleOpenStockTicket()}
+          />
+        </SafeBoundary>
       )}
 
       {page === 'transactions' && (
-        <TransactionsTab
-          transactions={transactions}
-          onCreateTicket={role !== 'viewer' ? () => handleOpenStockTicket() : undefined}
-        />
+        <SafeBoundary name="TransactionsTab">
+          <TransactionsTab
+            transactions={transactions}
+            onCreateTicket={role !== 'viewer' ? () => handleOpenStockTicket() : undefined}
+          />
+        </SafeBoundary>
       )}
 
       {page === 'reports' && (
-        <ReportsTab products={products} dashboardStats={dashboardStats} />
+        <SafeBoundary name="ReportsTab">
+          <ReportsTab products={products} dashboardStats={dashboardStats} />
+        </SafeBoundary>
       )}
 
       {page === 'users' && role === 'admin' && (
-        <UserManagement ownId={identity.id} />
+        <SafeBoundary name="UserManagement">
+          <UserManagement ownId={identity.id} />
+        </SafeBoundary>
       )}
 
       <ProductModal

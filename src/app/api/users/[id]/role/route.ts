@@ -1,21 +1,21 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { authenticateUser, requireRoles, handleApiError, ApiError, isValidUuid, profileCache, type Role } from "@/lib/auth/server";
+import {
+  createApiHandler,
+  ApiError,
+  isValidUuid,
+  profileCache,
+  type Role,
+} from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const user = await authenticateUser(request);
-    requireRoles(user, ["admin"]);
-
-    const { id } = await params;
+export const PATCH = createApiHandler<{ id: string }>(
+  async (request, { params, user }) => {
+    const { id } = params;
     if (!isValidUuid(id)) {
       throw new ApiError(400, "Mã tài khoản không hợp lệ (yêu cầu định dạng UUID)");
     }
-    if (user.id === id) {
+    if (user?.id === id) {
       throw new ApiError(400, "Không thể tự đổi vai trò");
     }
 
@@ -37,7 +37,6 @@ export async function PATCH(
 
     profileCache.delete(id); // apply the new role immediately on this instance
     return NextResponse.json(res.rows[0]);
-  } catch (error) {
-    return handleApiError(error);
-  }
-}
+  },
+  { roles: ["admin"] }
+);
