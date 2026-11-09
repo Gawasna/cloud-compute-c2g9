@@ -36,3 +36,6 @@ export type { ModalProps } from './Modal';
 
 export { SafeBoundary, withErrorBoundary } from './ErrorBoundary';
 export type { SafeBoundaryProps } from './ErrorBoundary';
+
+export { default as BrandSplashScreen } from './BrandSplashScreen';
+export type { BrandSplashScreenProps } from './BrandSplashScreen';
