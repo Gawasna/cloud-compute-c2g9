@@ -62,6 +62,7 @@ skills-lock.json
 # Bernstein Orchestrator Runtime
 .sdd/
 trace/
+specs/
 **.md
 
 # Syncthing
