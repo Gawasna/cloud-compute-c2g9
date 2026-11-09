@@ -1,0 +1,74 @@
+name: Cloud Heartbeat & Keep-Alive Watchdog
+
+# Scheduled watchdog workflow to resolve Single Point of Failure (SPOF) on HP EliteDesk Node.
+# Part of Dual Independent Watchdogs architecture (Issue #9, DIAGRAM-D9-AVAILABILITY).
+on:
+  schedule:
+    # Trigger every 30 minutes to maintain Supabase keep-alive without exhausting runner quotas.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target health endpoint URL'
+        required: false
+        default: 'https://cloudstock-c2g9.vercel.app/api/health'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  heartbeat-ping:
+    name: Cloud Heartbeat Ping
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Execute Health & Keep-Alive Ping
+        env:
+          DEFAULT_URL: 'https://cloudstock-c2g9.vercel.app/api/health'
+          INPUT_URL: ${{ inputs.target_url }}
+          VAR_URL: ${{ vars.APP_HEALTH_URL }}
+          SECRET_URL: ${{ secrets.APP_HEALTH_URL }}
+        run: |
+          TARGET="${INPUT_URL:-${VAR_URL:-${SECRET_URL:-$DEFAULT_URL}}}"
+          echo "Initiating cloud heartbeat probe to: $TARGET"
+          START_TIME=$(date +%s%N)
+
+          # Perform HTTP GET request with 10s timeout
+          HTTP_RESPONSE=$(curl -sS -w "\n%{http_code}\n%{time_total}" -m 10 "$TARGET" 2>&1) || CURL_EXIT=$?
+          CURL_EXIT=${CURL_EXIT:-0}
+
+          if [ $CURL_EXIT -ne 0 ]; then
+            echo "::warning::Cloud heartbeat probe failed with curl exit code $CURL_EXIT: $HTTP_RESPONSE"
+            echo "Note: If the deployed domain is not yet active, ensure APP_HEALTH_URL repository secret/variable is configured."
+            exit 0
+          fi
+
+          # Extract body, status code, and latency
+          BODY=$(echo "$HTTP_RESPONSE" | sed '$d' | sed '$d')
+          STATUS_CODE=$(echo "$HTTP_RESPONSE" | tail -n 2 | head -n 1)
+          TOTAL_TIME=$(echo "$HTTP_RESPONSE" | tail -n 1)
+
+          echo "HTTP Status Code: $STATUS_CODE"
+          echo "Response Time: ${TOTAL_TIME}s"
+          echo "Response Body: $BODY"
+
+          if [ "$STATUS_CODE" -eq 200 ]; then
+            DB_STATUS=$(echo "$BODY" | jq -r '.database.status // empty' 2>/dev/null || true)
+            OVERALL_STATUS=$(echo "$BODY" | jq -r '.status // empty' 2>/dev/null || true)
+            echo "Health status: $OVERALL_STATUS | DB status: $DB_STATUS"
+            if [ "$DB_STATUS" = "connected" ]; then
+              echo "Cloud heartbeat successful. Supabase keep-alive pulse verified."
+            else
+              echo "::warning::Application healthy but database status returned: '$DB_STATUS'"
+            fi
+          elif [ "$STATUS_CODE" -eq 503 ]; then
+            echo "::error::Health endpoint returned 503 Service Unavailable (Degraded Database State)"
+            exit 1
+          else
+            echo "::warning::Unexpected HTTP status $STATUS_CODE received from $TARGET"
+          fi
