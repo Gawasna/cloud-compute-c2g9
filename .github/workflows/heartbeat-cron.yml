@@ -11,7 +11,7 @@ on:
       target_url:
         description: 'Target health endpoint URL'
         required: false
-        default: 'https://cloudstock-c2g9.vercel.app/api/health'
+        default: 'https://cloud-compute-c2g9.vercel.app/api/health'
 
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
     steps:
       - name: Execute Health & Keep-Alive Ping
         env:
-          DEFAULT_URL: 'https://cloudstock-c2g9.vercel.app/api/health'
+          DEFAULT_URL: 'https://cloud-compute-c2g9.vercel.app/api/health'
           INPUT_URL: ${{ inputs.target_url }}
           VAR_URL: ${{ vars.APP_HEALTH_URL }}
           SECRET_URL: ${{ secrets.APP_HEALTH_URL }}
@@ -70,5 +70,6 @@ jobs:
             echo "::error::Health endpoint returned 503 Service Unavailable (Degraded Database State)"
             exit 1
           else
-            echo "::warning::Unexpected HTTP status $STATUS_CODE received from $TARGET"
+            echo "::error::Unexpected HTTP status $STATUS_CODE received from $TARGET"
+            exit 1
           fi

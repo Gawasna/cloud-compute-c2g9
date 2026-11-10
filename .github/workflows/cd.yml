@@ -1,8 +1,11 @@
 name: CD Release Pipeline
 
 # Trigger exclusively on semver tags (v1.2.3).
-# CI must have already passed on master before tagging — this workflow does NOT re-run CI gates.
-# Flow: smoke-test (Vercel deployment ready check + API health + security) -> create-github-release
+# Architecture: Continuous Release (CR) & Post-Deployment Integrity Verification.
+# Note: Vercel production deployment is triggered implicitly by the commit push/merge to master.
+# This workflow performs post-deployment health & security auditing against the live edge URL.
+# If verification passes -> generates changelog & publishes official immutable GitHub Release.
+# If verification fails -> halts release publication and alerts operators for manual Instant Rollback on Vercel.
 on:
   push:
     tags:
@@ -21,10 +24,10 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # JOB 1: Wait for Vercel deployment to reach READY state, then run smoke tests.
+  # JOB 1: Discover Vercel commit deployment, wait for READY, run live smoke tests.
   # ---------------------------------------------------------------------------
   smoke-test:
-    name: Deployment Smoke Test & Security Gate
+    name: Post-Deployment Smoke & Integrity Verification
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
