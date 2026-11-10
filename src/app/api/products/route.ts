@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createApiHandler, ApiError, isValidUuid } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
 import { toSearchPattern } from "@/lib/utils/sql";
+import { invalidateInventoryCaches } from "@/lib/cache/redis";
 
 export const GET = createApiHandler(
   async (request, { searchParams }) => {
@@ -61,6 +62,11 @@ export const POST = createApiHandler(
       "insert into public.products(name, sku, category_id, unit_id, cost_price, minimum_stock) values($1, $2, $3, $4, $5, $6) returning *",
       [name, sku, categoryId, unitId, costPrice, minimumStock]
     );
+
+    invalidateInventoryCaches().catch((err) => {
+      console.warn("[Cache Invalidation] Error evicting inventory cache on product creation:", err);
+    });
+
     return NextResponse.json(res.rows[0], { status: 201 });
   },
   { roles: ["admin"] }

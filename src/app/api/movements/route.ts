@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createApiHandler } from "@/lib/auth/server";
 import { query, withTransaction } from "@/lib/db/client";
 import { applyStockMovement, parseMovementInput } from "@/server/services/stock";
+import { invalidateInventoryCaches } from "@/lib/cache/redis";
 
 export const GET = createApiHandler(
   async (request, { searchParams }) => {
@@ -28,6 +29,11 @@ export const POST = createApiHandler(
     const input = parseMovementInput(body);
 
     const movement = await withTransaction((client) => applyStockMovement(client, input, user!.id));
+
+    // Proactive Invalidation: Evict cached dashboard metrics and trends on stock mutation
+    invalidateInventoryCaches().catch((err) => {
+      console.warn("[Cache Invalidation] Error evicting inventory cache on movement:", err);
+    });
 
     return NextResponse.json(movement, { status: 201 });
   },

@@ -46,6 +46,7 @@ describe("Unit: Next.js API Route Handlers Integrity & Security", () => {
       "src/lib/api/errors.ts",
       "src/lib/api/handler.ts",
       "src/lib/utils/validation.ts",
+      "src/lib/cache/redis.ts",
     ];
 
     for (const file of allServerFiles) {

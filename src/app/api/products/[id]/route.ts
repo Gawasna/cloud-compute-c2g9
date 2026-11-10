@@ -2,6 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { createApiHandler, ApiError, isValidUuid } from "@/lib/auth/server";
 import { query } from "@/lib/db/client";
+import { invalidateInventoryCaches } from "@/lib/cache/redis";
 
 export const PATCH = createApiHandler<{ id: string }>(
   async (request, { params }) => {
@@ -43,6 +44,11 @@ export const PATCH = createApiHandler<{ id: string }>(
     if (!res.rowCount) {
       throw new ApiError(404, "Không tìm thấy sản phẩm");
     }
+
+    invalidateInventoryCaches().catch((err) => {
+      console.warn("[Cache Invalidation] Error evicting inventory cache on product update:", err);
+    });
+
     return NextResponse.json(res.rows[0]);
   },
   { roles: ["admin"] }
@@ -63,6 +69,10 @@ export const DELETE = createApiHandler<{ id: string }>(
     if (!res.rowCount) {
       throw new ApiError(404, "Không tìm thấy sản phẩm");
     }
+
+    invalidateInventoryCaches().catch((err) => {
+      console.warn("[Cache Invalidation] Error evicting inventory cache on product delete:", err);
+    });
 
     return NextResponse.json({ deleted: true });
   },
