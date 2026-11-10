@@ -75,4 +75,6 @@ scripts/ops/**/.env
 
 # Binary presentations
 *.pptx
-
+\
+# Python
+/__pycache__/
