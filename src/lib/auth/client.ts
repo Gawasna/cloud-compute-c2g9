@@ -9,7 +9,7 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://lo
 
 function requireConfig() {
   if (!supabaseUrl || !anonKey || supabaseUrl.includes('your-project-ref')) {
-    throw new Error('Chưa cấu hình NEXT_PUBLIC_SUPABASE_URL và NEXT_PUBLIC_SUPABASE_ANON_KEY trong .env.local.');
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are missing from .env.local.');
   }
 }
 function remember(payload: Record<string, unknown>, fallbackEmail: string): Session {
@@ -19,7 +19,7 @@ function remember(payload: Record<string, unknown>, fallbackEmail: string): Sess
     expires_at: Math.floor(Date.now() / 1000) + Number(payload.expires_in || 3600),
     email: String((payload.user as { email?: string } | undefined)?.email || fallbackEmail),
   };
-  if (!session.access_token || !session.refresh_token) throw new Error('Supabase không trả về phiên đăng nhập hợp lệ.');
+  if (!session.access_token || !session.refresh_token) throw new Error('Supabase did not return a valid session.');
   sessionStorage.setItem(storageKey, JSON.stringify(session));
   return session;
 }
@@ -40,8 +40,8 @@ async function authRequest(path: string, body: Record<string, string>) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = String(payload.msg || payload.error_description || payload.message || 'Không thể xác thực tài khoản.');
-    if (response.status === 400 && /invalid login credentials/i.test(message)) throw new Error('Email hoặc mật khẩu không chính xác.');
+    const message = String(payload.msg || payload.error_description || payload.message || 'Unable to authenticate.');
+    if (response.status === 400 && /invalid login credentials/i.test(message)) throw new Error('Incorrect email or password.');
     throw new Error(message);
   }
   return payload as Record<string, unknown>;
@@ -69,10 +69,10 @@ export async function getIdentity(): Promise<Identity | null> {
     headers: { Authorization: `Bearer ${token}` }, cache: 'no-store',
   });
   if (response.status === 401) { clearSession(); return null; }
-  if (response.status === 403) throw new Error('Tài khoản chưa được cấp vai trò trong bảng profiles.');
-  if (!response.ok) throw new Error(`Không xác minh được vai trò từ NestJS (HTTP ${response.status}). Kiểm tra Backend.`);
+  if (response.status === 403) throw new Error('This account has not been assigned a role in profiles.');
+  if (!response.ok) throw new Error(`Unable to verify role from NestJS (HTTP ${response.status}). Check the backend.`);
   const data: { id: string; role: Role } = await response.json();
-  if (!['admin', 'staff', 'viewer'].includes(data.role)) throw new Error('Vai trò tài khoản không hợp lệ.');
+  if (!['admin', 'staff', 'viewer'].includes(data.role)) throw new Error('Invalid account role.');
   return { ...data, email: current()?.email || '' };
 }
 export async function logout() {

@@ -25,24 +25,74 @@ type Role='admin'|'staff'|'viewer';type AuthUser={id:string;role:Role};type Auth
 }
 @Injectable() class AuthGuard implements CanActivate{
  constructor(private db:Database){}
- async canActivate(ctx:ExecutionContext){const req=ctx.switchToHttp().getRequest<AuthedRequest>();const header=req.headers.authorization||'';const token=header.startsWith('Bearer ')?header.substring(7):'';if(!token)throw new UnauthorizedException('Cần đăng nhập');
- const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_ANON_KEY;if(!url||!key)throw new UnauthorizedException('Chưa cấu hình Supabase Auth');const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});const {data,error}=await client.auth.getUser(token);if(error||!data.user)throw new UnauthorizedException('Token không hợp lệ');
- const r=await this.db.query('select role,is_active from public.profiles where id=$1',[data.user.id]);if(!r.rows[0])throw new ForbiddenException('Tài khoản chưa được cấp vai trò');if(!r.rows[0].is_active)throw new ForbiddenException('Tài khoản đã bị vô hiệu hóa');req.user={id:data.user.id,role:r.rows[0].role};return true}
+ async canActivate(ctx:ExecutionContext){const req=ctx.switchToHttp().getRequest<AuthedRequest>();const header=req.headers.authorization||'';const token=header.startsWith('Bearer ')?header.substring(7):'';if(!token)throw new UnauthorizedException('Sign in required');
+ const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_ANON_KEY;if(!url||!key)throw new UnauthorizedException('Supabase Auth is not configured');const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});const {data,error}=await client.auth.getUser(token);if(error||!data.user)throw new UnauthorizedException('Invalid token');
+ const r=await this.db.query('select role,is_active from public.profiles where id=$1',[data.user.id]);if(!r.rows[0])throw new ForbiddenException('Account role has not been assigned');if(!r.rows[0].is_active)throw new ForbiddenException('Account has been disabled');req.user={id:data.user.id,role:r.rows[0].role};return true}
 }
 @Controller('auth')@UseGuards(AuthGuard)class AuthController{
  @Get('me') me(@Req()req:AuthedRequest){return {id:req.user.id,role:req.user.role}}
 }
-const roles=(req:AuthedRequest,allowed:Role[])=>{if(!allowed.includes(req.user.role))throw new ForbiddenException('Không đủ quyền truy cập')};
+const roles=(req:AuthedRequest,allowed:Role[])=>{if(!allowed.includes(req.user.role))throw new ForbiddenException('Insufficient permissions')};
+// Admin-only translation suggestions. The external service is configured on the backend,
+// so credentials never enter the browser or the Supabase database.
+class TranslationSuggestionDto{
+ @IsString() @MaxLength(160) text!:string;
+}
+@Injectable() class TranslationService{
+ async suggest(source:string):Promise<{suggestion:string;source:'existing'|'provider'}>{
+  const text=source.trim();
+  if(!text || text.length>160)throw new BadRequestException('Product name must contain 1–160 characters');
+  const endpoint=process.env.TRANSLATION_API_URL;
+  if(!endpoint)throw new BadRequestException('Automatic translation is not configured. Enter the English name manually or configure TRANSLATION_API_URL.');
+  let url:URL;
+  try{url=new URL(endpoint)}catch{throw new BadRequestException('Invalid translation provider URL')}
+  // Never let client supply a URL: only the server administrator configures the endpoint.
+  if(url.protocol!=='https:' && !(url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname)))
+   throw new BadRequestException('Translation provider requires HTTPS (except localhost)');
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),8000);
+  try{
+   const response=await fetch(url.toString(),{
+    method:'POST',signal:controller.signal,
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({q:text,source:'vi',target:'en',format:'text',...(process.env.TRANSLATION_API_KEY?{api_key:process.env.TRANSLATION_API_KEY}:{})}),
+   });
+   if(!response.ok)throw new Error(`Provider status ${response.status}`);
+   const payload=await response.json() as {translatedText?:unknown};
+   const translated=typeof payload.translatedText==='string'?payload.translatedText.trim():'';
+   if(!translated||translated.length>160)throw new Error('Invalid translation response');
+   return {suggestion:translated,source:'provider'};
+  }catch{
+   throw new BadRequestException('Translation provider is unavailable. Enter the English name manually.');
+  }finally{clearTimeout(timeout)}
+ }
+}
+@Controller('translation')@UseGuards(AuthGuard)class TranslationController{
+ constructor(private db:Database,private translator:TranslationService){}
+ @Post('suggest')async suggest(@Req()req:AuthedRequest,@Body()body:TranslationSuggestionDto){
+  roles(req,['admin']);
+  const text=body.text?.trim();
+  if(!text||text.length>160)throw new BadRequestException('Invalid product name');
+  // Avoid unnecessary calls and reuse already reviewed translations.
+  const known=await this.db.query("select name_en from public.products where lower(name)=lower($1) and name_en is not null and trim(name_en) <> '' order by updated_at desc nulls last limit 1",[text]);
+  if(known.rows[0]?.name_en)return {suggestion:known.rows[0].name_en,source:'existing'};
+  return this.translator.suggest(text);
+ }
+}
+
 class ProductDto{
  @IsString() @MaxLength(160) name!:string;
+ @IsOptional() @IsString() @MaxLength(160) nameEn?:string;
  @IsString() @MaxLength(40) sku!:string;
  @IsUUID() categoryId!:string;
  @IsUUID() unitId!:string;
  @IsNumber() @Min(0) costPrice!:number;
  @IsInt() @Min(0) minimumStock!:number;
 }
-class CategoryDto{@IsString() @MaxLength(100) name!:string}
-class UnitDto{@IsString() @MaxLength(60) name!:string;@IsString() @MaxLength(20) symbol!:string}
+class CategoryDto{@IsString() @MaxLength(100) name!:string;@IsOptional() @IsString() @MaxLength(100) nameEn?:string}
+class UnitDto{@IsString() @MaxLength(60) name!:string;@IsOptional() @IsString() @MaxLength(60) nameEn?:string;@IsString() @MaxLength(20) symbol!:string;@IsOptional() @IsString() @MaxLength(20) symbolEn?:string}
+class CategoryTranslationDto{@IsString() @MaxLength(100) nameEn!:string}
+class UnitTranslationDto{@IsString() @MaxLength(60) nameEn!:string;@IsString() @MaxLength(20) symbolEn!:string}
 class MoveDto{@IsUUID() productId!:string;@IsIn(['IN','OUT']) type!:'IN'|'OUT';@IsInt() @Min(1) quantity!:number;@IsOptional() @IsString() @MaxLength(500) note?:string}
 class RoleDto{@IsIn(['admin','staff','viewer']) role!:Role}
 class CreateUserDto{
@@ -56,17 +106,44 @@ class UserStatusDto{@IsIn([true,false]) isActive!:boolean}
 @Controller('health')class HealthController{constructor(private db:Database){}@Get()async health(){await this.db.query('select 1');return{status:'ok',service:'cloudstock-api',time:new Date().toISOString()}}}
 @Controller('products')@UseGuards(AuthGuard)class ProductController{
  constructor(private db:Database){}
- @Get()async list(@Req()req:AuthedRequest,@Query('search')search='',@Query('page')pg='1',@Query('limit')lim='20') {roles(req,['admin','staff','viewer']);const page=Math.max(1,Number(pg)||1),limit=Math.min(100,Math.max(1,Number(lim)||20));const q=`from public.products p join public.categories c on c.id=p.category_id join public.units u on u.id=p.unit_id where p.deleted_at is null and (p.name ilike $1 or p.sku ilike $1)`;const terms=[`%${search}%`];const [items,count]=await Promise.all([this.db.query(`select p.*,c.name as category_name,u.symbol as unit_symbol ${q} order by p.created_at desc limit $2 offset $3`,[...terms,limit,(page-1)*limit]),this.db.query(`select count(*)::int as count ${q}`,terms)]);return{items:items.rows,total:count.rows[0].count,page,limit}}
- @Post()async create(@Req()req:AuthedRequest,@Body()b:ProductDto){roles(req,['admin']);try{const r=await this.db.query('insert into public.products(name,sku,category_id,unit_id,cost_price,minimum_stock) values($1,$2,$3,$4,$5,$6) returning *',[b.name,b.sku.trim().toUpperCase(),b.categoryId,b.unitId,b.costPrice,b.minimumStock]);return r.rows[0]}catch(e){if((e as {code?:string}).code==='23505')throw new ConflictException('SKU trùng');throw e}}
- @Patch(':id')async update(@Req()req:AuthedRequest,@Param('id')id:string,@Body()b:ProductDto){roles(req,['admin']);const r=await this.db.query('update public.products set name=$1,sku=$2,category_id=$3,unit_id=$4,cost_price=$5,minimum_stock=$6,updated_at=now() where id=$7 and deleted_at is null returning *',[b.name,b.sku.trim().toUpperCase(),b.categoryId,b.unitId,b.costPrice,b.minimumStock,id]);if(!r.rowCount)throw new NotFoundException();return r.rows[0]}
+ @Get()async list(@Req()req:AuthedRequest,@Query('search')search='',@Query('page')pg='1',@Query('limit')lim='20') {roles(req,['admin','staff','viewer']);const page=Math.max(1,Number(pg)||1),limit=Math.min(100,Math.max(1,Number(lim)||20));const q=`from public.products p join public.categories c on c.id=p.category_id join public.units u on u.id=p.unit_id where p.deleted_at is null and (p.name ilike $1 or p.name_en ilike $1 or p.sku ilike $1 or c.name ilike $1 or c.name_en ilike $1)`;const terms=[`%${search}%`];const [items,count]=await Promise.all([this.db.query(`select p.*,c.name as category_name,c.name_en as category_name_en,u.symbol as unit_symbol,u.symbol_en as unit_symbol_en ${q} order by p.created_at desc limit $2 offset $3`,[...terms,limit,(page-1)*limit]),this.db.query(`select count(*)::int as count ${q}`,terms)]);return{items:items.rows,total:count.rows[0].count,page,limit}}
+ @Get('archived')async archived(@Req()req:AuthedRequest,@Query('page')rawPage='1',@Query('limit')rawLimit='20',@Query('search')search=''){
+  roles(req,['admin']);
+  const page=Math.max(1,Math.floor(Number(rawPage)||1));
+  const limit=Math.min(100,Math.max(1,Math.floor(Number(rawLimit)||20)));
+  const query=`from public.products p
+    join public.categories c on c.id=p.category_id
+    join public.units u on u.id=p.unit_id
+    where p.deleted_at is not null and (p.name ilike $1 or coalesce(p.name_en,'') ilike $1 or p.sku ilike $1)`;
+  const params=[`%${search}%`];
+  const [list,total]=await Promise.all([
+   this.db.query(`select p.id,p.name,p.name_en,p.sku,p.stock_quantity,p.deleted_at,
+     c.name as category_name,c.name_en as category_name_en,
+     u.symbol as unit_symbol,u.symbol_en as unit_symbol_en
+     ${query} order by p.deleted_at desc,p.id desc limit $2 offset $3`,[...params,limit,(page-1)*limit]),
+   this.db.query(`select count(*)::int as count ${query}`,params)
+  ]);
+  return {items:list.rows,total:total.rows[0].count,page,limit};
+ }
+ @Patch(':id/restore')async restore(@Req()req:AuthedRequest,@Param('id')id:string){
+  roles(req,['admin']);
+  const restored=await this.db.query(
+   'update public.products set deleted_at=null,updated_at=now() where id=$1 and deleted_at is not null returning id,sku,name,name_en,stock_quantity',
+   [id]
+  );
+  if(!restored.rowCount)throw new NotFoundException('Archived product not found');
+  return {restored:true,product:restored.rows[0]};
+ }
+ @Post()async create(@Req()req:AuthedRequest,@Body()b:ProductDto){roles(req,['admin']);try{const r=await this.db.query('insert into public.products(name,name_en,sku,category_id,unit_id,cost_price,minimum_stock) values($1,$2,$3,$4,$5,$6,$7) returning *',[b.name,b.nameEn?.trim()||null,b.sku.trim().toUpperCase(),b.categoryId,b.unitId,b.costPrice,b.minimumStock]);return r.rows[0]}catch(e){if((e as {code?:string}).code==='23505')throw new ConflictException('Duplicate SKU');throw e}}
+ @Patch(':id')async update(@Req()req:AuthedRequest,@Param('id')id:string,@Body()b:ProductDto){roles(req,['admin']);const r=await this.db.query('update public.products set name=$1,name_en=$2,sku=$3,category_id=$4,unit_id=$5,cost_price=$6,minimum_stock=$7,updated_at=now() where id=$8 and deleted_at is null returning *',[b.name,b.nameEn?.trim()||null,b.sku.trim().toUpperCase(),b.categoryId,b.unitId,b.costPrice,b.minimumStock,id]);if(!r.rowCount)throw new NotFoundException();return r.rows[0]}
  @Delete(':id')async remove(@Req()req:AuthedRequest,@Param('id')id:string){roles(req,['admin']);const r=await this.db.query('update public.products set deleted_at=now() where id=$1 and deleted_at is null returning id',[id]);if(!r.rowCount)throw new NotFoundException();return{deleted:true}}
 }
-@Controller('categories')@UseGuards(AuthGuard)class CategoriesController{constructor(private db:Database){}@Get()async list(){return(await this.db.query('select * from public.categories order by name')).rows}@Post()async add(@Req()req:AuthedRequest,@Body()b:CategoryDto){roles(req,['admin']);return(await this.db.query('insert into public.categories(name) values($1) returning *',[b.name])).rows[0]}@Delete(':id')async remove(@Req()req:AuthedRequest,@Param('id')id:string){roles(req,['admin']);await this.db.query('delete from public.categories where id=$1',[id]);return{deleted:true}}}
-@Controller('units')@UseGuards(AuthGuard)class UnitsController{constructor(private db:Database){}@Get()async list(){return(await this.db.query('select * from public.units order by name')).rows}@Post()async add(@Req()req:AuthedRequest,@Body()b:UnitDto){roles(req,['admin']);return(await this.db.query('insert into public.units(name,symbol) values($1,$2) returning *',[b.name,b.symbol])).rows[0]}}
+@Controller('categories')@UseGuards(AuthGuard)class CategoriesController{constructor(private db:Database){}@Get()async list(){return(await this.db.query('select * from public.categories order by name')).rows}@Post()async add(@Req()req:AuthedRequest,@Body()b:CategoryDto){roles(req,['admin']);return(await this.db.query('insert into public.categories(name,name_en) values($1,$2) returning *',[b.name,b.nameEn?.trim()||null])).rows[0]}@Patch(':id/translation')async translation(@Req()req:AuthedRequest,@Param('id')id:string,@Body()b:CategoryTranslationDto){roles(req,['admin']);const r=await this.db.query('update public.categories set name_en=$1 where id=$2 returning *',[b.nameEn.trim()||null,id]);if(!r.rowCount)throw new NotFoundException();return r.rows[0]}@Delete(':id')async remove(@Req()req:AuthedRequest,@Param('id')id:string){roles(req,['admin']);await this.db.query('delete from public.categories where id=$1',[id]);return{deleted:true}}}
+@Controller('units')@UseGuards(AuthGuard)class UnitsController{constructor(private db:Database){}@Get()async list(){return(await this.db.query('select * from public.units order by name')).rows}@Post()async add(@Req()req:AuthedRequest,@Body()b:UnitDto){roles(req,['admin']);return(await this.db.query('insert into public.units(name,name_en,symbol,symbol_en) values($1,$2,$3,$4) returning *',[b.name,b.nameEn?.trim()||null,b.symbol,b.symbolEn?.trim()||null])).rows[0]}@Patch(':id/translation')async translation(@Req()req:AuthedRequest,@Param('id')id:string,@Body()b:UnitTranslationDto){roles(req,['admin']);const r=await this.db.query('update public.units set name_en=$1,symbol_en=$2 where id=$3 returning *',[b.nameEn.trim()||null,b.symbolEn.trim()||null,id]);if(!r.rowCount)throw new NotFoundException();return r.rows[0]}}
 @Controller('movements')@UseGuards(AuthGuard)class MovementsController{
  constructor(private db:Database){}
  @Get()async list(@Req()req:AuthedRequest,@Query('limit')raw='50'){roles(req,['admin','staff']);const limit=Math.min(100,Math.max(1,Number(raw)||50));return(await this.db.query('select m.*,p.name as product_name,p.sku,pr.role as actor_role,pr.display_name as actor_name from public.stock_movements m join public.products p on p.id=m.product_id left join public.profiles pr on pr.id=m.performed_by order by m.created_at desc limit $1',[limit])).rows}
- @Post()async create(@Req()req:AuthedRequest,@Body()b:MoveDto){roles(req,['admin','staff']);const client=await this.db.pool.connect();try{await client.query('BEGIN');const row=await client.query('select id,stock_quantity,deleted_at from public.products where id=$1 for update',[b.productId]);const p=row.rows[0];if(!p||p.deleted_at)throw new NotFoundException('Không tìm thấy sản phẩm');const next=p.stock_quantity+(b.type==='IN'?b.quantity:-b.quantity);if(next<0)throw new BadRequestException('Không thể xuất quá số lượng tồn kho');await client.query('update public.products set stock_quantity=$1,updated_at=now() where id=$2',[next,b.productId]);const m=await client.query('insert into public.stock_movements(product_id,type,quantity,balance_after,note,performed_by) values($1,$2,$3,$4,$5,$6) returning *',[b.productId,b.type,b.quantity,next,b.note||null,req.user.id]);await client.query('COMMIT');return m.rows[0]}catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}}
+ @Post()async create(@Req()req:AuthedRequest,@Body()b:MoveDto){roles(req,['admin','staff']);const client=await this.db.pool.connect();try{await client.query('BEGIN');const row=await client.query('select id,stock_quantity,deleted_at from public.products where id=$1 for update',[b.productId]);const p=row.rows[0];if(!p||p.deleted_at)throw new NotFoundException('Product not found');const next=p.stock_quantity+(b.type==='IN'?b.quantity:-b.quantity);if(next<0)throw new BadRequestException('Insufficient stock');await client.query('update public.products set stock_quantity=$1,updated_at=now() where id=$2',[next,b.productId]);const m=await client.query('insert into public.stock_movements(product_id,type,quantity,balance_after,note,performed_by) values($1,$2,$3,$4,$5,$6) returning *',[b.productId,b.type,b.quantity,next,b.note||null,req.user.id]);await client.query('COMMIT');return m.rows[0]}catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}}
 }
 @Controller('dashboard')@UseGuards(AuthGuard)class DashboardController{constructor(private db:Database){}@Get()async view(){const [summary,history]=await Promise.all([this.db.query(`select count(*)::int as total_products,coalesce(sum(stock_quantity),0)::bigint as total_units,coalesce(sum(stock_quantity*cost_price),0)::numeric as inventory_value,count(*) filter(where stock_quantity=0)::int as out_of_stock,count(*) filter(where stock_quantity>0 and stock_quantity<minimum_stock)::int as low_stock from public.products where deleted_at is null`),this.db.query(`select date_trunc('day',created_at)::date as day,type,sum(quantity)::int as quantity from public.stock_movements where created_at>=now()-interval '30 days' group by 1,2 order by 1`)]);return{summary:summary.rows[0],history:history.rows}}}
 // Phase 6: mọi báo cáo tổng hợp đều thực hiện tại PostgreSQL, không lấy mẫu 100 sản phẩm.
@@ -75,7 +152,7 @@ const reportPeriods:Record<Period,{step:string;count:number}>={
  day:{step:'1 day',count:14},week:{step:'1 week',count:12},month:{step:'1 month',count:12},
 };
 const requirePeriod=(raw:string):Period=>{
- if(!['day','week','month'].includes(raw))throw new BadRequestException('Kỳ báo cáo không hợp lệ');
+ if(!['day','week','month'].includes(raw))throw new BadRequestException('Invalid reporting period');
  return raw as Period;
 };
 const csvCell=(input:unknown)=>{
@@ -123,7 +200,7 @@ const csvEncode=(columns:string[],rows:unknown[][])=>'\uFEFF'+[columns,...rows].
  }
  @Get('low-stock')async low(@Req()req:AuthedRequest){
   roles(req,['admin','viewer']);
-  return(await this.db.query(`select id,name,sku,stock_quantity,minimum_stock,
+  return(await this.db.query(`select id,name,name_en,sku,stock_quantity,minimum_stock,
    greatest(minimum_stock-stock_quantity,0) as shortage,
    case when stock_quantity=0 then 'OUT' else 'LOW' end as status
    from public.products where deleted_at is null and (stock_quantity=0 or stock_quantity<minimum_stock)
@@ -135,29 +212,29 @@ const csvEncode=(columns:string[],rows:unknown[][])=>'\uFEFF'+[columns,...rows].
  }
  @Get('export')async exportCsv(@Req()req:AuthedRequest,@Query('kind')kind='inventory',@Res()res:Response){
   roles(req,['admin','viewer']);
-  if(!['inventory','low-stock','movements'].includes(kind))throw new BadRequestException('Loại báo cáo không hợp lệ');
+  if(!['inventory','low-stock','movements'].includes(kind))throw new BadRequestException('Invalid report type');
   let columns:string[]=[],rows:unknown[][]=[];
   if(kind==='inventory'){
-   const r=await this.db.query(`select p.sku,p.name,c.name as category,u.symbol as unit,
+   const r=await this.db.query(`select p.sku,coalesce(nullif(p.name_en,''),p.name) as name,coalesce(nullif(c.name_en,''),c.name) as category,coalesce(nullif(u.symbol_en,''),u.symbol) as unit,
     p.stock_quantity,p.minimum_stock,p.cost_price,(p.stock_quantity*p.cost_price) as inventory_value
     from public.products p join public.categories c on c.id=p.category_id
     join public.units u on u.id=p.unit_id where p.deleted_at is null order by p.sku`);
-   columns=['SKU','Tên sản phẩm','Danh mục','Đơn vị','Tồn kho','Ngưỡng tối thiểu','Giá vốn (VND)','Giá trị tồn (VND)'];
+   columns=['SKU','Product Name','Category','Unit','Stock Quantity','Minimum Stock','Cost Price (VND)','Inventory Value (VND)'];
    rows=r.rows.map(x=>[x.sku,x.name,x.category,x.unit,x.stock_quantity,x.minimum_stock,x.cost_price,x.inventory_value]);
   }else if(kind==='low-stock'){
-   const r=await this.db.query(`select sku,name,stock_quantity,minimum_stock,
+   const r=await this.db.query(`select sku,coalesce(nullif(name_en,''),name) as name,stock_quantity,minimum_stock,
     greatest(minimum_stock-stock_quantity,0) as shortage,
-    case when stock_quantity=0 then 'Hết hàng' else 'Sắp hết' end as status
+    case when stock_quantity=0 then 'Out of Stock' else 'Low Stock' end as status
     from public.products where deleted_at is null and (stock_quantity=0 or stock_quantity<minimum_stock)
     order by stock_quantity,sku`);
-   columns=['SKU','Tên sản phẩm','Tồn kho','Ngưỡng tối thiểu','Cần bổ sung','Trạng thái'];
+   columns=['SKU','Product Name','Stock Quantity','Minimum Stock','Shortage','Status'];
    rows=r.rows.map(x=>[x.sku,x.name,x.stock_quantity,x.minimum_stock,x.shortage,x.status]);
   }else{
-   const r=await this.db.query(`select m.created_at,p.sku,p.name,m.type,m.quantity,m.balance_after,
+   const r=await this.db.query(`select m.created_at,p.sku,coalesce(nullif(p.name_en,''),p.name) as name,m.type,m.quantity,m.balance_after,
     coalesce(pr.display_name,'') as actor,coalesce(m.note,'') as note
     from public.stock_movements m join public.products p on p.id=m.product_id
     left join public.profiles pr on pr.id=m.performed_by order by m.created_at desc,m.id desc`);
-   columns=['Thời gian (UTC)','SKU','Tên sản phẩm','Loại','Số lượng','Tồn sau giao dịch','Người thực hiện','Ghi chú'];
+   columns=['Timestamp (UTC)','SKU','Product Name','Movement Type','Quantity','Balance After','Performed By','Note'];
    rows=r.rows.map(x=>[new Date(x.created_at).toISOString(),x.sku,x.name,x.type,x.quantity,x.balance_after,x.actor,x.note]);
   }
   res.setHeader('Content-Type','text/csv; charset=utf-8');
@@ -171,7 +248,7 @@ const csvEncode=(columns:string[],rows:unknown[][])=>'\uFEFF'+[columns,...rows].
  private adminClient(){
   const url=process.env.SUPABASE_URL;
   const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if(!url||!key)throw new BadRequestException('Chưa cấu hình dịch vụ quản lý tài khoản');
+  if(!url||!key)throw new BadRequestException('User management service is not configured');
   return createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
  }
  @Get()async list(@Req()req:AuthedRequest){
@@ -182,7 +259,7 @@ const csvEncode=(columns:string[],rows:unknown[][])=>'\uFEFF'+[columns,...rows].
   // Admin API trả về tối đa 1000 users/page; chỉ lấy email tương ứng profiles.
   for(let page=1;page<=20;page++){
    const {data,error}=await admin.auth.admin.listUsers({page,perPage:1000});
-   if(error)throw new BadRequestException('Không tải được danh sách tài khoản');
+   if(error)throw new BadRequestException('Unable to load users');
    for(const u of data.users)emails.set(u.id,u.email||'');
    if(data.users.length<1000)break;
   }
@@ -191,11 +268,11 @@ const csvEncode=(columns:string[],rows:unknown[][])=>'\uFEFF'+[columns,...rows].
  @Post()async create(@Req()req:AuthedRequest,@Body()b:CreateUserDto){
   roles(req,['admin']);
   const email=b.email.trim().toLowerCase(),name=b.displayName.trim();
-  if(!name||!/^\S+@\S+\.\S+$/.test(email))throw new BadRequestException('Tên hoặc email không hợp lệ');
-  if(b.password.length<10)throw new BadRequestException('Mật khẩu phải có ít nhất 10 ký tự');
+  if(!name||!/^\S+@\S+\.\S+$/.test(email))throw new BadRequestException('Invalid name or email');
+  if(b.password.length<10)throw new BadRequestException('Password must contain at least 10 characters');
   const admin=this.adminClient();
   const {data,error}=await admin.auth.admin.createUser({email,password:b.password,email_confirm:true});
-  if(error||!data.user)throw new BadRequestException(error?.message||'Không thể tạo tài khoản');
+  if(error||!data.user)throw new BadRequestException(error?.message||'Unable to create user');
   try{
    await this.db.query('insert into public.profiles(id,display_name,role,is_active) values($1,$2,$3,true)',[data.user.id,name,b.role]);
   }catch(e){
@@ -206,19 +283,19 @@ const csvEncode=(columns:string[],rows:unknown[][])=>'\uFEFF'+[columns,...rows].
  }
  @Patch(':id/role')async change(@Req()req:AuthedRequest,@Param('id')id:string,@Body()b:RoleDto){
   roles(req,['admin']);
-  if(req.user.id===id)throw new BadRequestException('Không thể tự đổi vai trò');
+  if(req.user.id===id)throw new BadRequestException('You cannot change your own role');
   const r=await this.db.query('update public.profiles set role=$1 where id=$2 returning id,role',[b.role,id]);
   if(!r.rowCount)throw new NotFoundException();return r.rows[0];
  }
  @Patch(':id/status')async status(@Req()req:AuthedRequest,@Param('id')id:string,@Body()b:UserStatusDto){
   roles(req,['admin']);
-  if(req.user.id===id)throw new BadRequestException('Không thể tự khóa hoặc mở khóa tài khoản');
+  if(req.user.id===id)throw new BadRequestException('You cannot change your own account status');
   const existing=await this.db.query('select id,is_active from public.profiles where id=$1',[id]);
-  if(!existing.rowCount)throw new NotFoundException('Tài khoản không tồn tại');
+  if(!existing.rowCount)throw new NotFoundException('Account not found');
   const admin=this.adminClient();
   // Supabase Auth cấm phiên mới; AuthGuard cũng từ chối phiên/token hiện có.
   const {error}=await admin.auth.admin.updateUserById(id,{ban_duration:b.isActive?'none':'876000h'});
-  if(error)throw new BadRequestException('Không thay đổi được trạng thái tài khoản');
+  if(error)throw new BadRequestException('Unable to change account status');
   try {
    const result=await this.db.query('update public.profiles set is_active=$1 where id=$2 returning id,is_active',[b.isActive,id]);
    return result.rows[0];
@@ -229,4 +306,4 @@ const csvEncode=(columns:string[],rows:unknown[][])=>'\uFEFF'+[columns,...rows].
   }
  }
 }
-@Module({imports:[ConfigModule.forRoot({isGlobal:true})],controllers:[HealthController,AuthController,ProductController,CategoriesController,UnitsController,MovementsController,DashboardController,ReportsController,UsersController],providers:[Database,AuthGuard]})export class AppModule{}
+@Module({imports:[ConfigModule.forRoot({isGlobal:true})],controllers:[HealthController,AuthController,ProductController,CategoriesController,UnitsController,MovementsController,DashboardController,ReportsController,UsersController,TranslationController],providers:[Database,AuthGuard,TranslationService]})export class AppModule{}

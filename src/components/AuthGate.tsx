@@ -12,10 +12,10 @@ export default function AuthGate() {
     getIdentity().then(user => {
       if (!alive) return;
       if (!user) router.replace('/login'); else setIdentity(user);
-    }).catch(err => { if (alive) setError(err instanceof Error ? err.message : 'Lỗi xác thực.'); });
+    }).catch(err => { if (alive) setError(err instanceof Error ? err.message : 'Authentication error.'); });
     return () => { alive = false; };
   }, [router]);
-  if (error) return <div className="auth-screen"><div className="auth-card"><h1>Không thể xác thực</h1><p role="alert">{error}</p><button className="auth-submit" onClick={() => window.location.reload()}>Thử lại</button><a href="/login">Quay về đăng nhập</a></div></div>;
-  if (!identity) return <div className="auth-screen"><div className="auth-card"><p>Đang xác minh phiên đăng nhập và vai trò…</p></div></div>;
+  if (error) return <div className="auth-screen"><div className="auth-card"><h1>Authentication Failed</h1><p role="alert">{error}</p><button className="auth-submit" onClick={() => window.location.reload()}>Retry</button><a href="/login">Back to Sign In</a></div></div>;
+  if (!identity) return <div className="auth-screen"><div className="auth-card"><p>Verifying session and access role…</p></div></div>;
   return <Dashboard identity={identity} />;
 }
