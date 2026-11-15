@@ -2,6 +2,11 @@ import React, { useState, useMemo } from 'react';
 import type { Role } from '@/components/layout/Sidebar';
 import { StockBadge, EmptyState } from '@/components/ui';
 import { getStockStatus } from '@/components/ui/StockBadge';
+import {
+  PlusIcon,
+  SearchIcon,
+  renderCategoryIcon,
+} from '@/components/ui/Icons';
 import type { Product } from './types';
 
 export interface ProductsTabProps {
@@ -40,14 +45,6 @@ export default function ProductsTab({
     });
   }, [products, search, filter]);
 
-  const getCategoryIcon = (category: string) => {
-    const c = category.toLowerCase();
-    if (c.includes('electronics') || c.includes('điện tử')) return '⌁';
-    if (c.includes('home') || c.includes('gia dụng')) return '▤';
-    if (c.includes('fashion') || c.includes('thời trang')) return '◈';
-    return '▣';
-  };
-
   return (
     <section className="panel">
       <div className="panel-head">
@@ -60,18 +57,23 @@ export default function ProductsTab({
             type="button"
             className="btn primary"
             onClick={onAddProduct}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            ＋ Add Product
+            <PlusIcon size={16} />
+            <span>Add Product</span>
           </button>
         )}
       </div>
 
       <div className="filters">
-        <input
-          placeholder="⌕ Search by name, SKU, category..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="search-input-wrapper">
+          <SearchIcon size={16} className="search-icon-adornment" />
+          <input
+            placeholder="Search by name, SKU, category..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -103,7 +105,9 @@ export default function ProductsTab({
               <tr key={p.id}>
                 <td>
                   <div className="item-name">
-                    <span className="item-avatar">{getCategoryIcon(p.category)}</span>
+                    <span className="item-avatar">
+                      {renderCategoryIcon(p.category, { size: 16 })}
+                    </span>
                     <div>
                       <strong>{p.name}</strong>
                       {p.nameOriginal && p.nameOriginal !== p.name && (

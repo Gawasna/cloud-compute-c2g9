@@ -51,3 +51,176 @@
 @media(max-width:760px){.user-create{grid-template-columns:1fr}}
 /* Phase 6: báo cáo lấy từ backend, không giới hạn bởi bảng sản phẩm đang phân trang. */
 .period-tabs{display:flex;gap:3px;padding:3px;border:1px solid #e5e7f0;border-radius:10px;background:#f7f8fc}.period-tab{border:0;background:transparent;border-radius:7px;padding:7px 11px;color:#697287;font-size:12px;font-weight:700}.period-tab.active{background:#fff;color:#6757d1;box-shadow:0 1px 5px #21234c1a}.phase6-bars{overflow:hidden;gap:4px}.phase6-bars .chart-col small{white-space:nowrap;font-size:9px}.phase6-chart-note{font-size:11px;color:#788196;margin:16px 0 0;text-align:right}.chart-placeholder{height:210px;display:grid;place-items:center;color:#8d95a8}.report-header{padding:8px 0 20px}.report-actions{display:flex;gap:9px;flex-wrap:wrap}@media(max-width:750px){.phase6-chart .panel-head{flex-direction:column;align-items:flex-start}.phase6-bars{gap:2px}.phase6-bars .bars{gap:2px}.phase6-bars .chart-col small{font-size:8px}.report-header{flex-direction:column;align-items:flex-start}}
+
+/* ==========================================================================
+   SVG ICON SYSTEM ALIGNMENT & OPTICAL BALANCE
+   ========================================================================== */
+.brand-icon {
+  background: linear-gradient(140deg, #6c62e6, #af8afd);
+  color: #fff;
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.nav-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.metric-icon {
+  position: absolute;
+  right: 18px;
+  top: 17px;
+  color: #9783e8;
+  background: #f2eefe;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.item-avatar {
+  width: 35px;
+  height: 35px;
+  border-radius: 8px;
+  background: #f0effa;
+  color: #7a6bcc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bell {
+  position: relative;
+  background: white;
+  border-radius: 12px;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  color: #636e85;
+  cursor: pointer;
+  padding: 0;
+}
+
+.close {
+  border: 0;
+  background: #f6f6fb;
+  border-radius: 7px;
+  width: 35px;
+  height: 35px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #70768a;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.close:hover {
+  background: #ededf5;
+  color: #1d2233;
+}
+
+.toast {
+  position: fixed;
+  bottom: 25px;
+  right: 25px;
+  background: #323051;
+  color: white;
+  border-radius: 10px;
+  padding: 12px 18px;
+  box-shadow: 0 8px 35px #25234440;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+}
+
+.category-symbol {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #816ee5;
+  background: #f4f2fe;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  min-width: 240px;
+  max-width: 400px;
+}
+
+.search-input-wrapper input {
+  width: 100%;
+  padding-left: 38px !important;
+}
+
+.search-input-wrapper .search-icon-adornment {
+  position: absolute;
+  left: 12px;
+  color: var(--muted, #7c8498);
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-brand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #7769e8;
+  color: #fff;
+  margin-right: 12px;
+}
+
+.auth-aside-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  line-height: 1;
+  opacity: 0.23;
+  margin-bottom: 20px;
+}
+
+.auth-aside-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.auth-aside-features span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

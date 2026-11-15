@@ -5,6 +5,7 @@ import {
   PAGE_NAMES,
   ROLE_NAMES,
 } from './Sidebar';
+import { BellIcon } from '@/components/ui/Icons';
 
 export interface TopbarProps {
   currentPage: Page;
@@ -63,7 +64,8 @@ export default function Topbar({
         </button>
 
         <div className="bell" title="Cảnh báo tồn kho" aria-label="Cảnh báo tồn kho">
-          ♧{lowStockCount > 0 && <i>{lowStockCount}</i>}
+          <BellIcon size={18} />
+          {lowStockCount > 0 && <i>{lowStockCount}</i>}
         </div>
       </div>
     </header>

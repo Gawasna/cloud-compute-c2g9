@@ -1,4 +1,5 @@
 import React from 'react';
+import { CheckCircle2Icon } from './Icons';
 
 export interface ToastProps {
   message: string;
@@ -14,7 +15,8 @@ export default function Toast({ message, onClose, className = '' }: ToastProps) 
       role="status"
       onClick={onClose}
     >
-      ✓ {message}
+      <CheckCircle2Icon size={16} />
+      <span>{message}</span>
     </div>
   );
 }
