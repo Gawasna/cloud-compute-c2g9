@@ -29,9 +29,10 @@ async function main() {
 
   console.log("[2/2] Đang cấu hình danh mục lệnh Bot Menu (setMyCommands)...");
   const commands = [
-    { command: "status", description: "Kiểm tra tức thì Vercel & Supabase DB" },
-    { command: "ping", description: "Đo độ trễ từ Edge tới Health Endpoint" },
-    { command: "help", description: "Hiển thị danh mục lệnh hỗ trợ" },
+    { command: "status", description: "Bảng điều khiển toàn diện Cloud & On-Premise HP" },
+    { command: "chart", description: "Biểu đồ trực quan (/chart [cloud | node | kuma])" },
+    { command: "ping", description: "Đo độ trễ phản hồi tức thì từ Cloudflare Edge" },
+    { command: "help", description: "Hướng dẫn chi tiết cú pháp các lệnh" },
   ];
   const cmdRes = await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
     method: "POST",
