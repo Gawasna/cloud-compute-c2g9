@@ -65,6 +65,21 @@ try:
         for m in g.get('monitorList', []):
             monitor_names[str(m['id'])] = m['name']
 
+    # Discover monitors dynamically by attributes/names
+    monitors = {}
+    for g in status_data.get('publicGroupList', []):
+        for m in g.get('monitorList', []):
+            name = m.get('name', '')
+            mid = str(m.get('id'))
+            if 'Supabase' in name or m.get('type') == 'postgres':
+                monitors['supabase'] = mid
+            elif 'Backend' in name or '/api/health' in name or m.get('type') == 'keyword':
+                monitors['vercel_api'] = mid
+            elif 'Frontend' in name:
+                monitors['vercel_front'] = mid
+            elif '1.1.1.1' in name or 'Cloudflare' in name:
+                monitors['uplink'] = mid
+
     hb = hb_data.get('heartbeatList', {})
     uptime = hb_data.get('uptimeList', {})
 
@@ -82,29 +97,54 @@ try:
                     'ping': p.get('ping')
                 })
 
-    # 2. Extract Downsampled Time-Series (~20 points over 8h)
-    m1_points = hb.get('1', [])
-    total_pts = len(m1_points)
-    step = max(1, total_pts // 20)
-    indices = list(range(0, total_pts, step))
-    if total_pts > 0 and indices[-1] != total_pts - 1:
-        indices.append(total_pts - 1)
+    # 2. Extract Downsampled Time-Series (~20 points over 8h) with Timestamp Alignment
+    import datetime
+
+    def parse_time(t_str):
+        try:
+            return datetime.datetime.strptime(t_str.split('.')[0], '%Y-%m-%d %H:%M:%S').timestamp()
+        except Exception:
+            return 0
+
+    base_id = monitors.get('supabase', '1')
+    base_points = hb.get(base_id, [])
+
+    other_lookups = {}
+    for key in ['vercel_api', 'vercel_front', 'uplink']:
+        mid = monitors.get(key)
+        pts = hb.get(mid, [])
+        other_lookups[key] = [(parse_time(p['time']), p.get('ping')) for p in pts if 'time' in p]
+
+    def find_closest_ping(target_ts, ts_list, max_tolerance=300):
+        if not ts_list or target_ts == 0:
+            return None
+        closest = min(ts_list, key=lambda x: abs(x[0] - target_ts))
+        if abs(closest[0] - target_ts) <= max_tolerance:
+            return closest[1]
+        return None
+
+    step = max(1, len(base_points) // 20)
+    indices = list(range(0, len(base_points), step))
+    if len(base_points) > 0 and indices[-1] != len(base_points) - 1:
+        indices.append(len(base_points) - 1)
 
     series = []
     for idx in indices:
-        p1 = m1_points[idx] if idx < len(m1_points) else {}
+        p1 = base_points[idx]
         raw_time = p1.get('time', '')
+        ts = parse_time(raw_time)
         short_time = raw_time[11:16] if len(raw_time) >= 16 else f'P{idx}'
-        p3 = hb.get('3', [])[idx] if idx < len(hb.get('3', [])) else {}
-        p4 = hb.get('4', [])[idx] if idx < len(hb.get('4', [])) else {}
-        p7 = hb.get('7', [])[idx] if idx < len(hb.get('7', [])) else {}
         series.append({
             'time': short_time,
             'supabase_ping': p1.get('ping'),
-            'vercel_health_ping': p3.get('ping'),
-            'vercel_front_ping': p4.get('ping'),
-            'uplink_ping': p7.get('ping')
+            'vercel_health_ping': find_closest_ping(ts, other_lookups.get('vercel_api', []), 300),
+            'vercel_front_ping': find_closest_ping(ts, other_lookups.get('vercel_front', []), 300),
+            'uplink_ping': find_closest_ping(ts, other_lookups.get('uplink', []), 300)
         })
+
+    supa_id = monitors.get('supabase', '1')
+    vapi_id = monitors.get('vercel_api', '3')
+    up_id = monitors.get('uplink', '7')
 
     result = {
         'status': 'up',
@@ -112,9 +152,9 @@ try:
         'monitors_up': sum(1 for v in hb.values() if v and v[-1].get('status') == 1),
         'monitors_down': sum(1 for v in hb.values() if v and v[-1].get('status') == 0),
         'uptime_24h_percent': round(sum(uptime.values()) / max(1, len(uptime)) * 100, 1),
-        'supabase_db_ping_ms': hb.get('1', [{}])[-1].get('ping'),
-        'vercel_api_ping_ms': hb.get('3', [{}])[-1].get('ping'),
-        'internet_uplink_ping_ms': hb.get('7', [{}])[-1].get('ping'),
+        'supabase_db_ping_ms': hb.get(supa_id, [{}])[-1].get('ping'),
+        'vercel_api_ping_ms': hb.get(vapi_id, [{}])[-1].get('ping'),
+        'internet_uplink_ping_ms': hb.get(up_id, [{}])[-1].get('ping'),
         'failed_events': failed_events[-10:],
         'series': series
     }
@@ -166,14 +206,21 @@ if os.path.isfile(db_path):
         cols = [r[1] for r in cur.fetchall()]
         type_col = "calculated_type" if "calculated_type" in cols else ("type" if "type" in cols else "id")
         val_col = "calculated_value" if "calculated_value" in cols else ("value" if "value" in cols else "id")
+        order_col = "last_seen" if "last_seen" in cols else "id"
 
-        cur.execute(f"SELECT id, {type_col}, {val_col} FROM issues_issue ORDER BY id DESC LIMIT 3")
+        cur.execute(f"SELECT id, {type_col}, {val_col}, {order_col} FROM issues_issue ORDER BY {order_col} DESC LIMIT 3")
         recent = []
         for r in cur.fetchall():
+            raw_id = str(r[0])
+            if len(raw_id) == 32:
+                hyphen_id = f"{raw_id[:8]}-{raw_id[8:12]}-{raw_id[12:16]}-{raw_id[16:20]}-{raw_id[20:]}"
+            else:
+                hyphen_id = raw_id
             recent.append({
-                "id": r[0],
+                "id": hyphen_id,
                 "type": str(r[1] or "UnknownError"),
-                "value": str(r[2] or "")[:120]
+                "value": str(r[2] or "")[:120],
+                "last_seen": str(r[3] or "")
             })
 
         result = {

@@ -9,9 +9,10 @@
  */
 
 export interface BugsinkRecentIssue {
-  id: number;
+  id: string | number;
   type: string;
   value: string;
+  last_seen?: string;
 }
 
 export interface BugsinkTelemetry {
@@ -33,7 +34,26 @@ export const BUGSINK_SPIKE_ALERTED_KEY = "bugsink:spike:alerted";
 export const BUGSINK_LAST_EVENTS_KEY = "bugsink:telemetry:last_events";
 export const DEFAULT_BUGSINK_SPIKE_THRESHOLD = 15;
 export const BUGSINK_ALERT_TTL_SEC = 1800; // 30 minutes anti-flood
-export const BUGSINK_DASHBOARD_URL = "https://hp.tail64e493.ts.net:8443";
+export const BUGSINK_DASHBOARD_URL = "http://100.103.109.18:35800/issues/2/";
+
+/**
+ * Normalizes a 32-character raw hex UUID to standard 8-4-4-4-12 hyphenated format.
+ */
+export function formatBugsinkUuid(rawId: string | number): string {
+  const s = String(rawId).replace(/-/g, "");
+  if (s.length === 32) {
+    return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
+  }
+  return String(rawId);
+}
+
+/**
+ * Constructs the canonical event detail URL in BugSink for a given issue ID.
+ */
+export function getBugsinkIssueUrl(issueId: string | number): string {
+  const uuid = formatBugsinkUuid(issueId);
+  return `http://100.103.109.18:35800/issues/issue/${uuid}/event/last/`;
+}
 
 export interface SimpleKV {
   get: (key: string, type?: string) => Promise<string | null>;
@@ -147,7 +167,9 @@ export function formatBugsinkSpikeAlert(
     for (const issue of telemetry.recent_issues) {
       const typeStr = escapeHtml(issue.type || "Error");
       const valStr = escapeHtml(issue.value || "");
-      lines.push(`• <code>[#${issue.id}] ${typeStr}</code>: ${valStr}`);
+      const shortId = escapeHtml(String(issue.id).replace(/-/g, "").slice(0, 8));
+      const issueUrl = getBugsinkIssueUrl(issue.id);
+      lines.push(`• <a href="${issueUrl}">[#${shortId}] ${typeStr}</a>: ${valStr}`);
     }
   }
 

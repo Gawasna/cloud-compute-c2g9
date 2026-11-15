@@ -4,6 +4,8 @@ import {
   evaluateBugsinkSpike,
   formatBugsinkSpikeAlert,
   formatBugsinkSummary,
+  formatBugsinkUuid,
+  getBugsinkIssueUrl,
   BUGSINK_SPIKE_ALERTED_KEY,
   BUGSINK_LAST_EVENTS_KEY,
   BUGSINK_DASHBOARD_URL,
@@ -165,8 +167,8 @@ describe("BugSink DMS Heartbeat Extractor & Spike Detection Suite", () => {
         total_issues: 8,
         total_events: 142,
         recent_issues: [
-          { id: 45, type: "OperationalError", value: "Database connection failed" },
-          { id: 44, type: "TypeError", value: "Cannot read properties of undefined (reading 'token')" },
+          { id: "d9550a31-4394-4f82-916c-78f9b9253d90", type: "OperationalError", value: "Database connection failed" },
+          { id: "854bc95e-2944-41cf-a0c1-daa96b238e77", type: "TypeError", value: "Cannot read properties of undefined (reading 'token')" },
         ],
       };
 
@@ -176,8 +178,8 @@ describe("BugSink DMS Heartbeat Extractor & Spike Detection Suite", () => {
       assert.ok(html.includes("<b>Số lỗi mới phát sinh:</b> <code>22</code>"));
       assert.ok(html.includes("<b>Số issue chưa giải quyết:</b> <code>8</code>"));
       assert.ok(html.includes("<b>Tổng số sự kiện (Events):</b> <code>142</code>"));
-      assert.ok(html.includes("• <code>[#45] OperationalError</code>: Database connection failed"));
-      assert.ok(html.includes("• <code>[#44] TypeError</code>: Cannot read properties of undefined (reading 'token')"));
+      assert.ok(html.includes(`<a href="http://100.103.109.18:35800/issues/issue/d9550a31-4394-4f82-916c-78f9b9253d90/event/last/">[#d9550a31] OperationalError</a>: Database connection failed`));
+      assert.ok(html.includes(`<a href="http://100.103.109.18:35800/issues/issue/854bc95e-2944-41cf-a0c1-daa96b238e77/event/last/">[#854bc95e] TypeError</a>: Cannot read properties of undefined (reading 'token')`));
       assert.ok(html.includes(`<a href="${BUGSINK_DASHBOARD_URL}">${BUGSINK_DASHBOARD_URL}</a>`));
       assert.ok(html.includes("<i>Dispatched by Cloudflare Edge Watchdog</i>"));
     });
@@ -239,6 +241,27 @@ describe("BugSink DMS Heartbeat Extractor & Spike Detection Suite", () => {
 
       const summaryUndefined = formatBugsinkSummary(undefined);
       assert.equal(summaryUndefined, "• <b>Bugsink:</b> <code>Không khả dụng (N/A)</code>");
+    });
+  });
+
+  describe("Test 4: formatBugsinkUuid and getBugsinkIssueUrl helper accuracy", () => {
+    it("formats 32-character raw hex UUID into 8-4-4-4-12 hyphenated format", () => {
+      const raw = "d9550a3143944f82916c78f9b9253d90";
+      const formatted = formatBugsinkUuid(raw);
+      assert.equal(formatted, "d9550a31-4394-4f82-916c-78f9b9253d90");
+    });
+
+    it("preserves already hyphenated UUID", () => {
+      const hyphenated = "854bc95e-2944-41cf-a0c1-daa96b238e77";
+      assert.equal(formatBugsinkUuid(hyphenated), "854bc95e-2944-41cf-a0c1-daa96b238e77");
+    });
+
+    it("generates correct event detail URL pointing to port 35800", () => {
+      const url = getBugsinkIssueUrl("d9550a3143944f82916c78f9b9253d90");
+      assert.equal(
+        url,
+        "http://100.103.109.18:35800/issues/issue/d9550a31-4394-4f82-916c-78f9b9253d90/event/last/"
+      );
     });
   });
 });

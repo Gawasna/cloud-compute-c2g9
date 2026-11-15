@@ -265,6 +265,7 @@ export function generateKumaChartUrl(
             fill: false,
             tension: 0.25,
             pointRadius: 2,
+            spanGaps: true,
           },
           {
             label: "Vercel Health (ms)",
@@ -274,6 +275,7 @@ export function generateKumaChartUrl(
             fill: false,
             tension: 0.25,
             pointRadius: 2,
+            spanGaps: true,
           },
           {
             label: "Vercel Front (ms)",
@@ -283,6 +285,7 @@ export function generateKumaChartUrl(
             fill: false,
             tension: 0.25,
             pointRadius: 2,
+            spanGaps: true,
           },
           {
             label: "Uplink 1.1.1.1 (ms)",
@@ -292,6 +295,7 @@ export function generateKumaChartUrl(
             fill: false,
             tension: 0.25,
             pointRadius: 2,
+            spanGaps: true,
           },
         ],
       },
