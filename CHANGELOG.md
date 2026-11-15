@@ -8,6 +8,7 @@ Format follows [Conventional Commits](https://www.conventionalcommits.org/) and 
 ## [Unreleased]
 
 ### Operations / Watchdog
+- Sudo packaging suite (`scripts/ops/dms/pack-for-ikari.sh`, `scripts/pack-dms-to-ikari.sh`) and systemd user timer (10m) for service account ikari on HP Node (TASK-20261115-0003 / Issue #21)
 - Dead Man's Switch (DMS) inverted heartbeat protocol for on-premise HP EliteDesk node monitoring behind NAT (TASK-20261115-0002 / Issue #21)
 - Telemetry Ring Buffer (48 points / 8h sliding window) on Cloudflare KV with zero-cost write budgeting (288 writes/day) (TASK-20261115-0002)
 - Telegram Slash Commands enhancement: unified 2-tier `/status` dashboard, `/chart` visualization (QuickChart dual-axis line chart), and Unicode sparklines (TASK-20261115-0002)
