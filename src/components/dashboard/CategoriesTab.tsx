@@ -14,26 +14,37 @@ export default function CategoriesTab({
     <section className="panel">
       <div className="panel-head">
         <div>
-          <h2>Danh mục hàng hóa</h2>
-          <p>Phân nhóm các mặt hàng hiện có</p>
+          <h2>Product Categories</h2>
+          <p>Classification and grouped catalog inventory</p>
         </div>
       </div>
 
       <div className="category-grid">
         {categories.map((item) => {
-          const count = products.filter((p) => p.category === item.name).length;
+          const displayName = item.name_en?.trim() || item.name;
+          const count = products.filter(
+            (p) =>
+              p.category === displayName ||
+              p.category === item.name ||
+              p.categoryId === item.id
+          ).length;
           return (
             <div className="category-card" key={item.id}>
               <div className="category-symbol">▦</div>
-              <h3>{item.name}</h3>
-              <p>{count} sản phẩm</p>
+              <h3>{displayName}</h3>
+              {item.name_en && item.name && item.name_en !== item.name && (
+                <small className="hint" style={{ display: 'block', marginBottom: 4 }}>
+                  {item.name}
+                </small>
+              )}
+              <p>{count} products</p>
             </div>
           );
         })}
       </div>
 
       <p className="hint">
-        Danh mục được đồng bộ từ cơ sở dữ liệu PostgreSQL. Để tạo danh mục mới hãy sử dụng API quản trị danh mục.
+        Categories are synced from PostgreSQL. To define new categories, use the category management API.
       </p>
     </section>
   );

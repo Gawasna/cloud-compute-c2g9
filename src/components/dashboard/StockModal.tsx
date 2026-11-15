@@ -36,18 +36,18 @@ export default function StockModal({
     const qty = Number(quantity);
 
     if (!product) {
-      setError('Sản phẩm đã chọn không tồn tại trong hệ thống.');
+      setError('The selected product does not exist in the system.');
       return;
     }
 
     if (!Number.isSafeInteger(qty) || qty <= 0) {
-      setError('Số lượng phải là một số nguyên dương (> 0).');
+      setError('Quantity must be a positive integer (> 0).');
       return;
     }
 
     if (type === 'OUT' && qty > product.stock) {
       setError(
-        `Không thể xuất quá số lượng tồn kho hiện tại (${product.stock} ${product.unit}).`
+        `Cannot issue more than current stock quantity (${product.stock} ${product.unit}).`
       );
       return;
     }
@@ -64,7 +64,7 @@ export default function StockModal({
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Tạo phiếu giao dịch thất bại.');
+      setError(err instanceof Error ? err.message : 'Failed to create stock ticket.');
     } finally {
       setSaving(false);
     }
@@ -74,8 +74,8 @@ export default function StockModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Tạo phiếu nhập / xuất kho"
-      description="Số lượng tồn kho và lịch sử giao dịch sẽ được cập nhật tự động sau khi xác nhận phiếu."
+      title="Create Stock Movement"
+      description="Stock quantities and movement logs will automatically update upon confirmation."
       actions={
         <>
           <button
@@ -84,7 +84,7 @@ export default function StockModal({
             onClick={onClose}
             disabled={saving}
           >
-            Hủy
+            Cancel
           </button>
           <button
             type="button"
@@ -92,39 +92,39 @@ export default function StockModal({
             disabled={saving}
             onClick={handleConfirm}
           >
-            {saving ? 'Đang lưu...' : 'Xác nhận'}
+            {saving ? 'Saving...' : 'Confirm'}
           </button>
         </>
       }
     >
       <div className="form-grid">
         <label className="wide">
-          Sản phẩm
+          Product
           <select
             value={selectedSku}
             onChange={(e) => setSelectedSku(e.target.value)}
           >
             {products.map((p) => (
               <option key={p.id} value={p.sku}>
-                {p.name} ({p.sku}) — tồn: {p.stock} {p.unit}
+                {p.name} ({p.sku}) — stock: {p.stock} {p.unit}
               </option>
             ))}
           </select>
         </label>
 
         <label>
-          Loại giao dịch
+          Movement Type
           <select
             value={type}
             onChange={(e) => setType(e.target.value as 'IN' | 'OUT')}
           >
-            <option value="IN">Nhập kho (＋)</option>
-            <option value="OUT">Xuất kho (－)</option>
+            <option value="IN">Stock In (＋)</option>
+            <option value="OUT">Stock Out (－)</option>
           </select>
         </label>
 
         <label>
-          Số lượng
+          Quantity
           <input
             type="number"
             min="1"
@@ -134,11 +134,11 @@ export default function StockModal({
         </label>
 
         <label className="wide">
-          Ghi chú
+          Note
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Lý do nhập / xuất hàng hoặc mã đơn vận chuyển"
+            placeholder="Reason for movement or reference order number"
           />
         </label>
       </div>

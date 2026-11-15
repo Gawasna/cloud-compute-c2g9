@@ -22,22 +22,29 @@ export default function ProductsTab({
   onCreateStockTicket,
 }: ProductsTabProps) {
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('Tất cả');
+  const [filter, setFilter] = useState('All');
 
   const visibleProducts = useMemo(() => {
     return products.filter((p) => {
-      const matchSearch = (p.name + ' ' + p.sku + ' ' + p.category)
+      const matchSearch = (
+        (p.name || '') + ' ' +
+        (p.nameOriginal || '') + ' ' +
+        (p.sku || '') + ' ' +
+        (p.category || '')
+      )
         .toLowerCase()
         .includes(search.toLowerCase());
       const statusLabel = getStockStatus(p.stock, p.minimum).label;
-      const matchFilter = filter === 'Tất cả' || statusLabel === filter;
+      const matchFilter = filter === 'All' || statusLabel === filter;
       return matchSearch && matchFilter;
     });
   }, [products, search, filter]);
 
   const getCategoryIcon = (category: string) => {
-    if (category === 'Điện tử') return '⌁';
-    if (category === 'Gia dụng') return '▤';
+    const c = category.toLowerCase();
+    if (c.includes('electronics') || c.includes('điện tử')) return '⌁';
+    if (c.includes('home') || c.includes('gia dụng')) return '▤';
+    if (c.includes('fashion') || c.includes('thời trang')) return '◈';
     return '▣';
   };
 
@@ -45,8 +52,8 @@ export default function ProductsTab({
     <section className="panel">
       <div className="panel-head">
         <div>
-          <h2>Danh sách sản phẩm</h2>
-          <p>Quản lý SKU, danh mục, giá vốn và định mức tồn kho</p>
+          <h2>Products</h2>
+          <p>Manage SKUs, categories, cost prices, and minimum stock levels</p>
         </div>
         {role === 'admin' && (
           <button
@@ -54,14 +61,14 @@ export default function ProductsTab({
             className="btn primary"
             onClick={onAddProduct}
           >
-            ＋ Thêm sản phẩm
+            ＋ Add Product
           </button>
         )}
       </div>
 
       <div className="filters">
         <input
-          placeholder="⌕  Tìm tên, mã SKU, danh mục..."
+          placeholder="⌕ Search by name, SKU, category..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -69,26 +76,26 @@ export default function ProductsTab({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         >
-          {['Tất cả', 'Còn hàng', 'Sắp hết', 'Hết hàng'].map((opt) => (
+          {['All', 'In Stock', 'Low Stock', 'Out of Stock'].map((opt) => (
             <option key={opt} value={opt}>
               {opt}
             </option>
           ))}
         </select>
-        <span className="result-count">{visibleProducts.length} sản phẩm</span>
+        <span className="result-count">{visibleProducts.length} products</span>
       </div>
 
       <div className="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>Tên sản phẩm</th>
-              <th>Mã SKU</th>
-              <th>Danh mục</th>
-              <th>Tồn kho</th>
-              <th>Ngưỡng</th>
-              <th>Trạng thái</th>
-              {role !== 'viewer' && <th>Thao tác</th>}
+              <th>Product Name</th>
+              <th>SKU</th>
+              <th>Category</th>
+              <th>Stock</th>
+              <th>Threshold</th>
+              <th>Status</th>
+              {role !== 'viewer' && <th>Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -97,13 +104,20 @@ export default function ProductsTab({
                 <td>
                   <div className="item-name">
                     <span className="item-avatar">{getCategoryIcon(p.category)}</span>
-                    <strong>{p.name}</strong>
+                    <div>
+                      <strong>{p.name}</strong>
+                      {p.nameOriginal && p.nameOriginal !== p.name && (
+                        <span className="hint" style={{ display: 'block', fontSize: 12 }}>
+                          {p.nameOriginal}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td className="mono">{p.sku}</td>
                 <td>{p.category}</td>
                 <td>
-                  {p.stock.toLocaleString('vi-VN')} {p.unit.toLowerCase()}
+                  {p.stock.toLocaleString('en-US')} {p.unit.toLowerCase()}
                 </td>
                 <td>{p.minimum}</td>
                 <td>
@@ -118,14 +132,14 @@ export default function ProductsTab({
                           className="small-btn"
                           onClick={() => onEditProduct(p)}
                         >
-                          Sửa
+                          Edit
                         </button>
                         <button
                           type="button"
                           className="small-btn red"
                           onClick={() => onDeleteProduct(p)}
                         >
-                          Xóa
+                          Delete
                         </button>
                       </>
                     )}
@@ -135,7 +149,7 @@ export default function ProductsTab({
                         className="small-btn"
                         onClick={() => onCreateStockTicket(p.sku)}
                       >
-                        Tạo phiếu
+                        Create Ticket
                       </button>
                     )}
                   </td>
@@ -146,11 +160,11 @@ export default function ProductsTab({
               <tr>
                 <td colSpan={role !== 'viewer' ? 7 : 6}>
                   <EmptyState
-                    message="Không tìm thấy sản phẩm phù hợp với bộ lọc."
-                    actionText={search || filter !== 'Tất cả' ? 'Xóa bộ lọc' : undefined}
+                    message="No products found matching the active filters."
+                    actionText={search || filter !== 'All' ? 'Clear Filters' : undefined}
                     onAction={() => {
                       setSearch('');
-                      setFilter('Tất cả');
+                      setFilter('All');
                     }}
                   />
                 </td>

@@ -5,7 +5,7 @@ export interface BrandSplashScreenProps {
 
 export default function BrandSplashScreen({
   title = 'CloudStock',
-  message = 'Đang xác minh phiên đăng nhập và vai trò…',
+  message = 'Verifying session and access permissions…',
 }: BrandSplashScreenProps) {
   return (
     <div className="splash-container" role="status" aria-live="polite">

@@ -3,25 +3,25 @@ import './globals.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://cloudstock.vercel.app'),
-  title: 'CloudStock | Quản lý kho',
-  description: 'Hệ thống quản lý kho trên nền tảng đám mây',
+  title: 'CloudStock | Inventory Management',
+  description: 'Cloud-based inventory management system',
   openGraph: {
-    title: 'CloudStock | Hệ Thống Quản Lý Kho Đám Mây',
-    description: 'Hệ thống quản lý kho trên nền tảng đám mây đa chi nhánh & kiểm kê tự động',
+    title: 'CloudStock | Cloud-Based Inventory Management System',
+    description: 'Enterprise cloud inventory management platform with real-time tracking and automated stock alerts',
     siteName: 'CloudStock',
     type: 'website',
-    locale: 'vi_VN',
+    locale: 'en_US',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'CloudStock | Quản lý kho đám mây',
-    description: 'Hệ thống quản lý kho trên nền tảng đám mây đa chi nhánh & kiểm kê tự động',
+    title: 'CloudStock | Inventory Management',
+    description: 'Enterprise cloud inventory management platform with real-time tracking and automated stock alerts',
   },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi">
+    <html lang="en">
       <body>{children}</body>
     </html>
   );

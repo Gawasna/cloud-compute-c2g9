@@ -29,8 +29,10 @@ export default function OverviewTab({
   const donutLowPercent = products.length ? ((inStockCount + lowCount) / products.length) * 100 : 0;
 
   const getCategoryIcon = (category: string) => {
-    if (category === 'Điện tử') return '⌁';
-    if (category === 'Gia dụng') return '▤';
+    const c = category.toLowerCase();
+    if (c.includes('electronics') || c.includes('điện tử')) return '⌁';
+    if (c.includes('home') || c.includes('gia dụng')) return '▤';
+    if (c.includes('fashion') || c.includes('thời trang')) return '◈';
     return '▣';
   };
 
@@ -47,30 +49,30 @@ export default function OverviewTab({
         ) : (
           <>
             <MetricCard
-              title="Tổng sản phẩm"
-              value={products.length.toLocaleString('vi-VN')}
-              changeText="Danh mục đang quản lý"
+              title="Total Products"
+              value={products.length.toLocaleString('en-US')}
+              changeText="Managed catalog items"
               changeType="positive"
               icon="◈"
             />
             <MetricCard
-              title="Tổng đơn vị tồn"
-              value={totalUnits.toLocaleString('vi-VN')}
-              changeText="Đang có trong kho"
+              title="Total Stock Units"
+              value={totalUnits.toLocaleString('en-US')}
+              changeText="Units currently on hand"
               changeType="positive"
               icon="▤"
             />
             <MetricCard
-              title="Sắp hết hàng"
+              title="Low Stock Alert"
               value={lowCount}
-              changeText="Cần nhập thêm"
+              changeText="Needs replenishment"
               changeType="negative"
               icon="⚑"
             />
             <MetricCard
-              title="Đã hết hàng"
+              title="Out of Stock"
               value={outCount}
-              changeText="Cần xử lý"
+              changeText="Requires immediate action"
               changeType="negative"
               icon="⊘"
             />
@@ -82,20 +84,20 @@ export default function OverviewTab({
         <section className="panel chart-panel">
           <div className="panel-head">
             <div>
-              <h2>Biến động nhập xuất</h2>
-              <p>Số lượng nhập và xuất kho trong 7 ngày gần nhất</p>
+              <h2>Movement Trends</h2>
+              <p>Inbound and outbound transaction quantities over the past 7 days</p>
             </div>
-            <span className="pill">7 ngày</span>
+            <span className="pill">7 days</span>
           </div>
 
           <div className="legend">
             <span>
               <i className="dot purple" />
-              Nhập kho
+              Inbound
             </span>
             <span>
               <i className="dot coral" />
-              Xuất kho
+              Outbound
             </span>
           </div>
 
@@ -124,17 +126,17 @@ export default function OverviewTab({
                   <div className="bars">
                     <span
                       className="bar bar-in"
-                      title={`Nhập ${ins}`}
+                      title={`Inbound ${ins}`}
                       style={{ height: `${Math.max(4, (ins / max) * 100)}%` }}
                     />
                     <span
                       className="bar bar-out"
-                      title={`Xuất ${outs}`}
+                      title={`Outbound ${outs}`}
                       style={{ height: `${Math.max(4, (outs / max) * 100)}%` }}
                     />
                   </div>
                   <small>
-                    {day.toLocaleDateString('vi-VN', { weekday: 'short' })}
+                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
                   </small>
                 </div>
               );
@@ -145,8 +147,8 @@ export default function OverviewTab({
         <section className="panel alerts-panel">
           <div className="panel-head">
             <div>
-              <h2>Cảnh báo tồn kho</h2>
-              <p>Phân loại tình trạng sản phẩm</p>
+              <h2>Stock Distribution</h2>
+              <p>Inventory level categorization</p>
             </div>
           </div>
 
@@ -158,22 +160,22 @@ export default function OverviewTab({
           >
             <div>
               <b>{products.length}</b>
-              <span>sản phẩm</span>
+              <span>items</span>
             </div>
           </div>
 
           <div className="donut-legend">
             <div>
               <i className="dot green" />
-              Còn hàng <strong>{inStockCount}</strong>
+              In Stock <strong>{inStockCount}</strong>
             </div>
             <div>
               <i className="dot coral" />
-              Sắp hết <strong>{lowCount}</strong>
+              Low Stock <strong>{lowCount}</strong>
             </div>
             <div>
               <i className="dot gray" />
-              Hết hàng <strong>{outCount}</strong>
+              Out of Stock <strong>{outCount}</strong>
             </div>
           </div>
         </section>
@@ -182,15 +184,15 @@ export default function OverviewTab({
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Danh sách sản phẩm</h2>
-            <p>Tình trạng hàng hóa mới nhất trong kho</p>
+            <h2>Product Catalog</h2>
+            <p>Latest stock inventory records</p>
           </div>
           <button
             type="button"
             className="btn secondary"
             onClick={() => onNavigateTab(role === 'viewer' ? 'reports' : 'products')}
           >
-            {role === 'viewer' ? 'Xem báo cáo' : 'Xem tất cả'} ↗
+            {role === 'viewer' ? 'View Reports' : 'View All'} ↗
           </button>
         </div>
 
@@ -198,12 +200,12 @@ export default function OverviewTab({
           <table>
             <thead>
               <tr>
-                <th>Tên sản phẩm</th>
-                <th>Mã SKU</th>
-                <th>Danh mục</th>
-                <th>Tồn kho</th>
-                <th>Ngưỡng</th>
-                <th>Trạng thái</th>
+                <th>Product Name</th>
+                <th>SKU</th>
+                <th>Category</th>
+                <th>Stock</th>
+                <th>Threshold</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -218,7 +220,7 @@ export default function OverviewTab({
                   <td className="mono">{p.sku}</td>
                   <td>{p.category}</td>
                   <td>
-                    {p.stock.toLocaleString('vi-VN')} {p.unit.toLowerCase()}
+                    {p.stock.toLocaleString('en-US')} {p.unit.toLowerCase()}
                   </td>
                   <td>{p.minimum}</td>
                   <td>
@@ -229,7 +231,7 @@ export default function OverviewTab({
               {recentProducts.length === 0 && (
                 <tr>
                   <td colSpan={6} className="empty">
-                    {loading ? 'Đang tải danh sách sản phẩm...' : 'Chưa có sản phẩm nào trong kho.'}
+                    {loading ? 'Loading catalog items...' : 'No products found in warehouse.'}
                   </td>
                 </tr>
               )}
