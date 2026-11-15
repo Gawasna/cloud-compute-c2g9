@@ -215,6 +215,29 @@ describe("Telegram Slash Commands Handler Tests", () => {
             { ts: 1731690600, cloud_duration_ms: 320, hp_load: 0.18, kuma_supabase_ping_ms: 460, kuma_vercel_ping_ms: 1100 },
           ];
         }
+        if (key === "dms:elitedesk:state") {
+          return {
+            node: "elitedesk-mint",
+            last_seen_epoch: 1731690600000,
+            kuma: {
+              status: "up",
+              monitors_total: 7,
+              monitors_up: 7,
+              monitors_down: 0,
+              uptime_24h_percent: 100.0,
+              supabase_db_ping_ms: 488,
+              vercel_api_ping_ms: 1295,
+              internet_uplink_ping_ms: 15,
+              failed_events: [
+                { monitor_id: 1, monitor_name: "Supabase DB", time: "2026-11-15 08:00", msg: "Timeout", ping: 10000 }
+              ],
+              series: [
+                { time: "05:00", supabase_ping: 500, vercel_health_ping: 1300, vercel_front_ping: 160, uplink_ping: 20 },
+                { time: "06:00", supabase_ping: 510, vercel_health_ping: 1250, vercel_front_ping: 155, uplink_ping: 19 },
+              ]
+            }
+          };
+        }
         return null;
       },
     };
@@ -251,8 +274,10 @@ describe("Telegram Slash Commands Handler Tests", () => {
         },
         envWithKv
       );
-      assert.match(sentCaption, /BIỂU ĐỒ ĐỘ TRỄ UPTIME KUMA/);
-      assert.match(sentPhotoUrl, /Uptime%20Kuma/);
+      assert.match(sentCaption, /BIỂU ĐỒ ĐỘ TRỄ 8H UPTIME KUMA/);
+      assert.match(sentCaption, /Sự kiện lỗi/);
+      assert.match(sentCaption, /Supabase DB: Timeout/);
+      assert.match(sentPhotoUrl, /Uptime%20Kuma%208-Hour/);
     } finally {
       globalThis.fetch = originalFetch;
     }

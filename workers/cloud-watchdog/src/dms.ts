@@ -1,3 +1,42 @@
+export interface KumaMonitorSummary {
+  id: number;
+  name?: string;
+  status: "up" | "down" | "pending" | "maintenance";
+  ping_ms?: number;
+  uptime_24h?: number;
+}
+
+export interface KumaFailedEvent {
+  monitor_id: number;
+  monitor_name: string;
+  time: string;
+  msg: string;
+  ping?: number | null;
+}
+
+export interface KumaSeriesPoint {
+  time: string;
+  supabase_ping?: number | null;
+  vercel_health_ping?: number | null;
+  vercel_front_ping?: number | null;
+  uplink_ping?: number | null;
+}
+
+export interface KumaTelemetrySummary {
+  status: "up" | "down";
+  monitors_total: number;
+  monitors_up: number;
+  monitors_down: number;
+  avg_ping_ms?: number;
+  supabase_db_ping_ms?: number;
+  vercel_api_ping_ms?: number;
+  internet_uplink_ping_ms?: number;
+  uptime_24h_percent?: number;
+  monitors?: KumaMonitorSummary[];
+  failed_events?: KumaFailedEvent[];
+  series?: KumaSeriesPoint[];
+}
+
 export interface DmsCheckinPayload {
   node: string;
   uptime_kuma?: string;
@@ -5,7 +44,9 @@ export interface DmsCheckinPayload {
   memory_used_mb?: number;
   memory_total_mb?: number;
   disk_used_percent?: number;
+  uptime_sec?: number;
   timestamp?: string;
+  kuma?: KumaTelemetrySummary;
 }
 
 export interface DmsState extends DmsCheckinPayload {
@@ -23,6 +64,12 @@ export interface TelemetryPoint {
   hp_load?: number;
   hp_mem_mb?: number;
   hp_kuma_status?: string;
+  kuma_monitors_up?: number;
+  kuma_monitors_total?: number;
+  kuma_supabase_ping_ms?: number;
+  kuma_vercel_ping_ms?: number;
+  kuma_uplink_ping_ms?: number;
+  kuma_avg_ping_ms?: number;
 }
 
 export const DMS_STATE_KEY = "dms:elitedesk:state";

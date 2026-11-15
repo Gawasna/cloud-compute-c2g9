@@ -200,12 +200,39 @@ export async function handleTelegramCommand(
     let caption: string;
 
     if (isKumaMode) {
-      chartUrl = generateKumaChartUrl(buffer);
-      caption = [
-        `<b>[BIỂU ĐỒ ĐỘ TRỄ UPTIME KUMA (ON-PREMISE)]</b>`,
-        `Dữ liệu ${buffer.length} chu kỳ gần nhất từ HP node (chu kỳ 10m):`,
-        `• Supabase DB vs Vercel API vs Internet Uplink.`,
-      ].join("\n");
+      const dms = await getDmsState(env.WATCHDOG_KV);
+      const kSeries = dms?.kuma?.series;
+
+      if (kSeries && kSeries.length >= 2) {
+        chartUrl = generateKumaChartUrl(kSeries);
+        const fails = dms?.kuma?.failed_events || [];
+        let failedSection = "• <b>Sự kiện lỗi (24h qua):</b> <code>0 sự cố (100% OK)</code>";
+        if (fails.length > 0) {
+          const failLines = fails.slice(-5).map(
+            (f) => `  ⚠️ [${escapeHtml(f.time)}] ${escapeHtml(f.monitor_name)}: ${escapeHtml(f.msg)}`
+          );
+          failedSection = `• <b>Sự kiện lỗi (${fails.length} sự cố gần nhất):</b>\n${failLines.join("\n")}`;
+        }
+
+        caption = [
+          `<b>[BIỂU ĐỒ ĐỘ TRỄ 8H UPTIME KUMA (ON-PREMISE)]</b>`,
+          `Chuỗi ${kSeries.length} mốc thời gian thực tế (8 giờ qua) từ HP node:`,
+          `• <b>Supabase DB:</b> <code>${dms?.kuma?.supabase_db_ping_ms ?? "N/A"}ms</code>`,
+          `• <b>Vercel Health:</b> <code>${dms?.kuma?.vercel_api_ping_ms ?? "N/A"}ms</code>`,
+          `• <b>Internet Uplink:</b> <code>${dms?.kuma?.internet_uplink_ping_ms ?? "N/A"}ms</code>`,
+          `• <b>Khả dụng 24h:</b> <code>${dms?.kuma?.uptime_24h_percent ?? 100}%</code>`,
+          ``,
+          failedSection,
+        ].join("\n");
+      } else {
+        chartUrl = generateKumaChartUrl(undefined, buffer);
+        caption = [
+          `<b>[BIỂU ĐỒ ĐỘ TRỄ UPTIME KUMA (ON-PREMISE)]</b>`,
+          `Dữ liệu ${buffer.length} chu kỳ gần nhất từ HP node (chu kỳ 10m):`,
+          `• Supabase DB vs Vercel API vs Internet Uplink.`,
+          `• <b>Sự kiện lỗi:</b> <code>0 sự cố</code>`,
+        ].join("\n");
+      }
     } else {
       chartUrl = generateQuickChartUrl(buffer);
       const summary = summarizeTelemetry(buffer);
