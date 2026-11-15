@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import {
   LayoutDashboardIcon,
@@ -10,6 +12,7 @@ import {
   UsersIcon,
   type IconProps,
 } from '@/components/ui/Icons';
+import { useI18n } from '@/lib/i18n';
 
 export type Role = 'admin' | 'staff' | 'viewer';
 export type Page =
@@ -30,7 +33,18 @@ export interface SidebarProps {
   lowStockCount?: number;
 }
 
-export const PAGE_NAMES: Record<Page, string> = {
+export const PAGE_NAMES_VI: Record<Page, string> = {
+  dashboard: 'Tổng quan',
+  products: 'Sản phẩm',
+  archived: 'Kho lưu trữ',
+  categories: 'Danh mục',
+  stock: 'Nhập / Xuất kho',
+  transactions: 'Lịch sử giao dịch',
+  reports: 'Báo cáo tồn kho',
+  users: 'Quản trị người dùng',
+};
+
+export const PAGE_NAMES_EN: Record<Page, string> = {
   dashboard: 'Overview',
   products: 'Products',
   archived: 'Archived Products',
@@ -40,6 +54,8 @@ export const PAGE_NAMES: Record<Page, string> = {
   reports: 'Reports',
   users: 'User Management',
 };
+
+export const PAGE_NAMES: Record<Page, string> = PAGE_NAMES_EN;
 
 export const ROLE_PERMISSIONS: Record<Role, Page[]> = {
   admin: [
@@ -56,11 +72,19 @@ export const ROLE_PERMISSIONS: Record<Role, Page[]> = {
   viewer: ['dashboard', 'reports'],
 };
 
-export const ROLE_NAMES: Record<Role, string> = {
+export const ROLE_NAMES_VI: Record<Role, string> = {
+  admin: 'Quản trị viên',
+  staff: 'Nhân viên kho',
+  viewer: 'Người xem báo cáo',
+};
+
+export const ROLE_NAMES_EN: Record<Role, string> = {
   admin: 'Administrator',
   staff: 'Warehouse Staff',
   viewer: 'Report Viewer',
 };
+
+export const ROLE_NAMES: Record<Role, string> = ROLE_NAMES_EN;
 
 export const PAGE_ICONS: Record<Page, React.ComponentType<IconProps>> = {
   dashboard: LayoutDashboardIcon,
@@ -81,6 +105,7 @@ export default function Sidebar({
   lowStockCount = 0,
 }: SidebarProps) {
   const allowedPages = ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.viewer;
+  const { t } = useI18n();
 
   const getAvatarChar = (r: Role) => {
     switch (r) {
@@ -97,12 +122,12 @@ export default function Sidebar({
   const getRoleTitle = (r: Role) => {
     switch (r) {
       case 'admin':
-        return 'System Administrator';
+        return t.roles.adminTitle;
       case 'staff':
-        return 'Warehouse Staff';
+        return t.roles.staffTitle;
       case 'viewer':
       default:
-        return 'Report Viewer';
+        return t.roles.viewerTitle;
     }
   };
 
@@ -117,13 +142,15 @@ export default function Sidebar({
         </span>
       </div>
 
-      <div className="sidebar-caption">INVENTORY MANAGEMENT</div>
+      <div className="sidebar-caption">{t.common.brandCaption}</div>
 
       <nav>
         {allowedPages.map((pageKey) => {
           const isActive = currentPage === pageKey;
           const showCount = pageKey === 'products' && lowStockCount > 0;
           const IconComponent = PAGE_ICONS[pageKey];
+          const label = t.navigation[pageKey] || PAGE_NAMES[pageKey];
+
           return (
             <button
               key={pageKey}
@@ -134,7 +161,7 @@ export default function Sidebar({
               <span className="nav-icon">
                 <IconComponent size={18} />
               </span>
-              {PAGE_NAMES[pageKey]}
+              {label}
               {showCount && <span className="nav-count">{lowStockCount}</span>}
             </button>
           );
@@ -142,12 +169,12 @@ export default function Sidebar({
       </nav>
 
       <div className="sidebar-bottom">
-        <div className="demo-flag">● SYSTEM ONLINE</div>
+        <div className="demo-flag">● {t.common.systemOnline}</div>
         <div className="profile">
           <span className="avatar">{getAvatarChar(role)}</span>
           <div>
             <b>{getRoleTitle(role)}</b>
-            <small>{userEmail || ROLE_NAMES[role]}</small>
+            <small>{userEmail || t.roles[role]}</small>
           </div>
         </div>
       </div>

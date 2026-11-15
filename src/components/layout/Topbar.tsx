@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import {
   type Page,
@@ -6,6 +8,7 @@ import {
   ROLE_NAMES,
 } from './Sidebar';
 import { BellIcon } from '@/components/ui/Icons';
+import { useI18n, LanguageSwitcher } from '@/lib/i18n';
 
 export interface TopbarProps {
   currentPage: Page;
@@ -20,39 +23,37 @@ export default function Topbar({
   lowStockCount = 0,
   onLogout,
 }: TopbarProps) {
+  const { t } = useI18n();
+
   const getSubtext = (r: Role) => {
-    switch (r) {
-      case 'admin':
-        return 'Theo dõi và quản lý toàn diện hoạt động kho của bạn.';
-      case 'staff':
-        return 'Tiếp nhận, kiểm tra và ghi nhận hàng hóa ra vào kho.';
-      case 'viewer':
-      default:
-        return 'Theo dõi các chỉ số và báo cáo phân tích hàng tồn kho.';
-    }
+    return t.topbar.subtext[r] || t.topbar.subtext.viewer;
   };
 
   const getPageHeading = (p: Page) => {
     if (p === 'dashboard') {
-      return 'Xin chào, chào mừng trở lại!';
+      return t.topbar.welcomeGreeting;
     }
-    return PAGE_NAMES[p];
+    return t.navigation[p] || PAGE_NAMES[p];
   };
+
+  const pageNavName = (t.navigation[currentPage] || PAGE_NAMES[currentPage] || '').toUpperCase();
 
   return (
     <header className="topbar">
       <div>
         <div className="eyebrow">
-          HỆ THỐNG QUẢN LÝ TỒN KHO / {PAGE_NAMES[currentPage]?.toUpperCase()}
+          {t.topbar.systemTitle} / {pageNavName}
         </div>
         <h1>{getPageHeading(currentPage)}</h1>
         <p>{getSubtext(role)}</p>
       </div>
 
       <div className="top-actions">
+        <LanguageSwitcher />
+
         <div className="role-box">
-          <span>Vai trò</span>
-          <strong>{ROLE_NAMES[role]}</strong>
+          <span>{t.topbar.roleLabel}</span>
+          <strong>{t.roles[role] || ROLE_NAMES[role]}</strong>
         </div>
 
         <button
@@ -60,10 +61,10 @@ export default function Topbar({
           className="logout-btn"
           onClick={onLogout}
         >
-          Đăng xuất
+          {t.common.logout}
         </button>
 
-        <div className="bell" title="Cảnh báo tồn kho" aria-label="Cảnh báo tồn kho">
+        <div className="bell" title={t.topbar.alertTooltip} aria-label={t.topbar.alertTooltip}>
           <BellIcon size={18} />
           {lowStockCount > 0 && <i>{lowStockCount}</i>}
         </div>

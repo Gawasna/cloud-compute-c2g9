@@ -1,5 +1,8 @@
+'use client';
+
 import React, { useState } from 'react';
 import { Modal } from '@/components/ui';
+import { useI18n } from '@/lib/i18n';
 import type { ApiCategory, ApiUnit, Product } from './types';
 
 export interface ProductModalProps {
@@ -29,6 +32,8 @@ export default function ProductModal({
   units,
   editProduct,
 }: ProductModalProps) {
+  const { t, locale } = useI18n();
+
   const initialName = editProduct ? (editProduct.nameOriginal || editProduct.name) : '';
   const initialNameEn = editProduct ? (editProduct.nameEn || '') : '';
   const isInitiallySame = Boolean(initialName && initialNameEn && initialName === initialNameEn);
@@ -73,7 +78,7 @@ export default function ProductModal({
     const numStock = Number(stock);
 
     if (!trimmedName || !trimmedSku || !targetCategory || !targetUnit) {
-      setError('Please provide product name, SKU, category, and unit.');
+      setError(t.productModal.errRequired);
       return;
     }
 
@@ -85,14 +90,12 @@ export default function ProductModal({
       !Number.isInteger(numStock) ||
       numStock < 0
     ) {
-      setError('Cost price and stock quantities must be valid non-negative numbers.');
+      setError(t.productModal.errNumbers);
       return;
     }
 
     if (!editProduct && numStock > 0) {
-      setError(
-        'New products must have an initial stock of 0. Create a stock-in movement ticket afterwards.'
-      );
+      setError(t.productModal.errInitialStock);
       return;
     }
 
@@ -113,7 +116,7 @@ export default function ProductModal({
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save product.');
+      setError(err instanceof Error ? err.message : t.productModal.errSave);
     } finally {
       setSaving(false);
     }
@@ -123,12 +126,8 @@ export default function ProductModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={editProduct ? 'Edit Product' : 'Add New Product'}
-      description={
-        editProduct
-          ? 'Update the details and English name of the product.'
-          : 'Choose an existing category and unit configured in the system.'
-      }
+      title={editProduct ? t.productModal.editTitle : t.productModal.addTitle}
+      description={editProduct ? t.productModal.editDesc : t.productModal.addDesc}
       actions={
         <>
           <button
@@ -137,7 +136,7 @@ export default function ProductModal({
             onClick={onClose}
             disabled={saving}
           >
-            Cancel
+            {t.common.cancel}
           </button>
           <button
             type="button"
@@ -145,14 +144,14 @@ export default function ProductModal({
             disabled={saving}
             onClick={handleConfirm}
           >
-            {saving ? 'Saving...' : 'Confirm'}
+            {saving ? t.common.saving : t.common.confirm}
           </button>
         </>
       }
     >
       <div className="form-grid">
         <label className="wide">
-          Product Name
+          {t.productModal.nameLabel}
           <input
             value={name}
             maxLength={160}
@@ -161,7 +160,7 @@ export default function ProductModal({
               setName(val);
               if (nameAlreadyEnglish) setNameEn(val);
             }}
-            placeholder="e.g. Logitech G304 Wireless Mouse"
+            placeholder={t.productModal.namePlaceholder}
           />
         </label>
 
@@ -173,67 +172,74 @@ export default function ProductModal({
               onChange={(e) => toggleNameAlreadyEnglish(e.target.checked)}
               style={{ width: 17, height: 17, flex: 'none', accentColor: '#7569eb' }}
             />
-            <span>Product name is already in English</span>
+            <span>{t.productModal.alreadyEnglish}</span>
           </label>
           <p className="hint" style={{ margin: '5px 0 0 27px' }}>
             {nameAlreadyEnglish
-              ? 'The English name will be saved automatically using the product name above.'
-              : 'Enter the original name above, then provide its English translation below.'}
+              ? t.productModal.alreadyEnglishHint
+              : t.productModal.needEnglishHint}
           </p>
         </div>
 
         {!nameAlreadyEnglish && (
           <label className="wide">
-            English Product Name
+            {t.productModal.nameEnLabel}
             <input
               value={nameEn}
               maxLength={160}
-              placeholder="e.g. Logitech G304 Wireless Mouse"
+              placeholder={t.productModal.nameEnPlaceholder}
               onChange={(e) => setNameEn(e.target.value)}
             />
           </label>
         )}
 
         <label>
-          SKU Code
+          {t.productModal.skuLabel}
           <input
             value={sku}
             maxLength={40}
             onChange={(e) => setSku(e.target.value)}
-            placeholder="e.g. ELE-001"
+            placeholder={t.productModal.skuPlaceholder}
           />
         </label>
 
         <label>
-          Category
+          {t.productModal.categoryLabel}
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
           >
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name_en?.trim() || c.name}
-              </option>
-            ))}
+            {categories.map((c) => {
+              const catName = locale === 'vi' ? c.name : (c.name_en?.trim() || c.name);
+              return (
+                <option key={c.id} value={c.id}>
+                  {catName}
+                </option>
+              );
+            })}
           </select>
         </label>
 
         <label>
-          Unit of Measure
+          {t.productModal.unitLabel}
           <select
             value={unitId}
             onChange={(e) => setUnitId(e.target.value)}
           >
-            {units.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name_en?.trim() || u.name} ({u.symbol_en?.trim() || u.symbol})
-              </option>
-            ))}
+            {units.map((u) => {
+              const unitName = locale === 'vi' ? u.name : (u.name_en?.trim() || u.name);
+              const unitSymbol = locale === 'vi' ? u.symbol : (u.symbol_en?.trim() || u.symbol);
+              return (
+                <option key={u.id} value={u.id}>
+                  {unitName} ({unitSymbol})
+                </option>
+              );
+            })}
           </select>
         </label>
 
         <label>
-          Cost Price (VND)
+          {t.productModal.priceLabel}
           <input
             type="number"
             min="0"
@@ -243,18 +249,18 @@ export default function ProductModal({
         </label>
 
         <label>
-          Initial Stock (0; use Stock In ticket)
+          {t.productModal.initialStockLabel}
           <input
             type="number"
             min="0"
-            disabled={!!editProduct}
+            disabled={Boolean(editProduct)}
             value={stock}
             onChange={(e) => setStock(e.target.value)}
           />
         </label>
 
         <label>
-          Low Stock Threshold
+          {t.productModal.thresholdLabel}
           <input
             type="number"
             min="0"

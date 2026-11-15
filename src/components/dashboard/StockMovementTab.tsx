@@ -1,6 +1,9 @@
+'use client';
+
 import React from 'react';
 import { StockBadge } from '@/components/ui';
 import { PlusIcon, renderCategoryIcon } from '@/components/ui/Icons';
+import { useI18n } from '@/lib/i18n';
 import type { Product } from './types';
 
 export interface StockMovementTabProps {
@@ -12,10 +15,12 @@ export default function StockMovementTab({
   products,
   onCreateTicket,
 }: StockMovementTabProps) {
+  const { t, formatNumber } = useI18n();
+
   return (
     <>
       <div className="inline-heading">
-        <p>Record stock movements, automatically updating on-hand quantities and transaction logs.</p>
+        <p>{t.stockTab.intro}</p>
         <button
           type="button"
           className="btn primary"
@@ -23,15 +28,15 @@ export default function StockMovementTab({
           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
           <PlusIcon size={16} />
-          <span>Create Stock Movement</span>
+          <span>{t.stockTab.createBtn}</span>
         </button>
       </div>
 
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Current Stock Levels</h2>
-            <p>Verify physical inventory before processing inbound or outbound movements</p>
+            <h2>{t.stockTab.panelTitle}</h2>
+            <p>{t.stockTab.panelDesc}</p>
           </div>
         </div>
 
@@ -39,12 +44,12 @@ export default function StockMovementTab({
           <table>
             <thead>
               <tr>
-                <th>Product Name</th>
-                <th>SKU</th>
-                <th>Category</th>
-                <th>Stock</th>
-                <th>Threshold</th>
-                <th>Status</th>
+                <th>{t.common.productName}</th>
+                <th>{t.common.sku}</th>
+                <th>{t.common.category}</th>
+                <th>{t.common.stock}</th>
+                <th>{t.common.threshold}</th>
+                <th>{t.common.status}</th>
               </tr>
             </thead>
             <tbody>
@@ -68,9 +73,9 @@ export default function StockMovementTab({
                   <td className="mono">{p.sku}</td>
                   <td>{p.category}</td>
                   <td>
-                    {p.stock.toLocaleString('en-US')} {p.unit.toLowerCase()}
+                    {formatNumber(p.stock)} {p.unit.toLowerCase()}
                   </td>
-                  <td>{p.minimum}</td>
+                  <td>{formatNumber(p.minimum)}</td>
                   <td>
                     <StockBadge stock={p.stock} minimum={p.minimum} />
                   </td>
@@ -79,7 +84,7 @@ export default function StockMovementTab({
               {products.length === 0 && (
                 <tr>
                   <td colSpan={6} className="empty">
-                    No products found in warehouse.
+                    {t.overview.noProducts}
                   </td>
                 </tr>
               )}

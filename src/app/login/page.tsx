@@ -10,9 +10,11 @@ import {
   ArrowRightIcon,
   CheckCircle2Icon,
 } from '@/components/ui/Icons';
+import { I18nProvider, useI18n, LanguageSwitcher } from '@/lib/i18n';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -42,11 +44,23 @@ export default function LoginPage() {
     try {
       await login(email.trim(), password);
       const identity = await getIdentity();
-      if (!identity) throw new Error('Unable to verify account session.');
+      if (!identity) {
+        throw new Error(
+          locale === 'vi'
+            ? 'Không thể xác thực phiên làm việc của tài khoản.'
+            : 'Unable to verify account session.'
+        );
+      }
       router.replace('/');
     } catch (err) {
       await logout().catch(() => {});
-      setError(err instanceof Error ? err.message : 'Sign-in failed.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : locale === 'vi'
+          ? 'Đăng nhập không thành công.'
+          : 'Sign-in failed.'
+      );
     } finally {
       setBusy(false);
     }
@@ -54,6 +68,10 @@ export default function LoginPage() {
 
   return (
     <main className="auth-screen">
+      <div style={{ position: 'absolute', top: 20, right: 24, zIndex: 10 }}>
+        <LanguageSwitcher />
+      </div>
+
       <section className="auth-card">
         <div className="auth-brand">
           <span className="auth-brand-icon">
@@ -61,21 +79,21 @@ export default function LoginPage() {
           </span>{' '}
           Cloud<span>Stock</span>
         </div>
-        <div className="auth-eyebrow">INVENTORY MANAGEMENT SYSTEM</div>
-        <h1>Sign in</h1>
-        <p>Welcome back! Sign in with your administrator-provided account.</p>
+        <div className="auth-eyebrow">{t.login.eyebrow}</div>
+        <h1>{t.login.title}</h1>
+        <p>{t.login.welcome}</p>
         <form onSubmit={submit}>
-          <label htmlFor="cloud-email">Email Address</label>
+          <label htmlFor="cloud-email">{t.login.email}</label>
           <input
             id="cloud-email"
             type="email"
             autoComplete="username"
-            placeholder="user@company.com"
+            placeholder={t.login.emailPlaceholder}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-          <label htmlFor="cloud-password">Password</label>
+          <label htmlFor="cloud-password">{t.login.password}</label>
           <div className="auth-password">
             <input
               id="cloud-password"
@@ -85,12 +103,12 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={1}
-              placeholder="Enter password"
+              placeholder={t.login.passwordPlaceholder}
             />
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t.login.hideAria : t.login.showAria}
               style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
             >
               {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
@@ -103,41 +121,59 @@ export default function LoginPage() {
           )}
           <button className="auth-submit" type="submit" disabled={busy || checking}>
             {busy ? (
-              'Signing in…'
+              t.login.submitting
             ) : checking ? (
-              'Checking session…'
+              t.login.checking
             ) : (
               <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                <span>Sign in</span>
+                <span>{t.login.submit}</span>
                 <ArrowRightIcon size={16} />
               </span>
             )}
           </button>
         </form>
-        <div className="auth-note">Need an account? Contact your administrator.</div>
+        <div className="auth-note">{t.login.needAccount}</div>
       </section>
       <aside className="auth-aside">
         <div className="auth-aside-mark">
           <BoxesIcon size={36} />
         </div>
         <h2>
-          Control your inventory.
-          <br />
-          Anytime, anywhere.
+          {locale === 'vi' ? (
+            <>
+              Kiểm soát tồn kho chặt chẽ.
+              <br />
+              Mọi lúc, mọi nơi.
+            </>
+          ) : (
+            <>
+              Control your inventory.
+              <br />
+              Anytime, anywhere.
+            </>
+          )}
         </h2>
-        <p>Manage products, track movements, and review inventory reports in one place.</p>
+        <p>{t.login.asideDesc}</p>
         <div className="auth-aside-features">
           <span>
-            <CheckCircle2Icon size={16} /> Secure sign-in
+            <CheckCircle2Icon size={16} /> {t.login.feature1}
           </span>
           <span>
-            <CheckCircle2Icon size={16} /> Three access roles
+            <CheckCircle2Icon size={16} /> {t.login.feature2}
           </span>
           <span>
-            <CheckCircle2Icon size={16} /> Access control
+            <CheckCircle2Icon size={16} /> {t.login.feature3}
           </span>
         </div>
       </aside>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <I18nProvider>
+      <LoginForm />
+    </I18nProvider>
   );
 }

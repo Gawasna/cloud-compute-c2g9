@@ -1,4 +1,7 @@
+'use client';
+
 import React from 'react';
+import { useI18n } from '@/lib/i18n';
 
 export interface StockBadgeProps {
   stock: number;
@@ -7,7 +10,7 @@ export interface StockBadgeProps {
   className?: string;
 }
 
-export function getStockStatus(stock: number, minimum: number, lang: 'en' | 'vi' = 'en'): {
+export function getStockStatus(stock: number, minimum: number, lang: 'en' | 'vi' = 'vi'): {
   label: string;
   variant: 'danger' | 'warning' | 'success';
 } {
@@ -21,8 +24,11 @@ export function getStockStatus(stock: number, minimum: number, lang: 'en' | 'vi'
   return { label: lang === 'vi' ? 'Còn hàng' : 'In Stock', variant: 'success' };
 }
 
-export default function StockBadge({ stock, minimum, lang = 'en', className = '' }: StockBadgeProps) {
-  const { label, variant } = getStockStatus(stock, minimum, lang);
+export default function StockBadge({ stock, minimum, lang, className = '' }: StockBadgeProps) {
+  const { locale } = useI18n();
+  const effectiveLang = lang || locale || 'vi';
+  const { label, variant } = getStockStatus(stock, minimum, effectiveLang);
+
   return (
     <span className={`tag ${variant} ${className}`.trim()}>
       {label}

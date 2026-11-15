@@ -1,6 +1,9 @@
+'use client';
+
 import React, { type ReactNode } from 'react';
 import Sidebar, { type Page, type Role } from './Sidebar';
 import Topbar from './Topbar';
+import { I18nProvider, useI18n } from '@/lib/i18n';
 
 export interface AppShellProps {
   currentPage: Page;
@@ -12,7 +15,7 @@ export interface AppShellProps {
   children: ReactNode;
 }
 
-export default function AppShell({
+function AppShellInner({
   currentPage,
   onSelectPage,
   role,
@@ -21,6 +24,8 @@ export default function AppShell({
   onLogout,
   children,
 }: AppShellProps) {
+  const { t } = useI18n();
+
   return (
     <div className="app">
       <Sidebar
@@ -41,8 +46,16 @@ export default function AppShell({
 
         {children}
 
-        <footer>© CloudStock · Hệ thống quản lý kho</footer>
+        <footer>{t.footer.copyright}</footer>
       </main>
     </div>
+  );
+}
+
+export default function AppShell(props: AppShellProps) {
+  return (
+    <I18nProvider>
+      <AppShellInner {...props} />
+    </I18nProvider>
   );
 }
