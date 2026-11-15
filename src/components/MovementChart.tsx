@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest, type ReportPeriod, type TrendResponse } from '@/lib/api/cloudstock';
 import { withErrorBoundary } from '@/components/ui';
+import { MovementTrendChart } from '@/components/charts';
 
 const labels: Record<ReportPeriod, string> = { day: 'Day', week: 'Week', month: 'Month' };
 
@@ -46,13 +47,13 @@ function MovementChartInner({ title = 'Inventory Movement Trends' }: { title?: s
   const points = useMemo(
     () =>
       data?.points.map((p) => ({
-        ...p,
+        period: p.period,
+        label: fmt(p.period, period),
         inbound: Number(p.inbound),
         outbound: Number(p.outbound),
       })) || [],
-    [data]
+    [data, period]
   );
-  const max = Math.max(1, ...points.flatMap((p) => [p.inbound, p.outbound]));
 
   return (
     <section className="panel chart-panel phase6-chart">
@@ -106,32 +107,16 @@ function MovementChartInner({ title = 'Inventory Movement Trends' }: { title?: s
           </button>
         </div>
       ) : loading ? (
-        <div className="chart-placeholder">Loading trend analytics...</div>
+        <div className="chart-placeholder" style={{ height: '240px' }}>
+          Loading trend analytics...
+        </div>
       ) : (
         <>
-          <div
-            className="chart phase6-bars"
-            role="img"
-            aria-label={`Movement chart by ${labels[period].toLowerCase()}`}
-          >
-            {points.map((p) => (
-              <div className="chart-col" key={p.period}>
-                <div className="bars">
-                  <span
-                    className="bar bar-in"
-                    style={{ height: `${(p.inbound / max) * 100}%`, minHeight: p.inbound ? 3 : 0 }}
-                    title={`${p.period}: Inbound ${p.inbound.toLocaleString('en-US')}`}
-                  />
-                  <span
-                    className="bar bar-out"
-                    style={{ height: `${(p.outbound / max) * 100}%`, minHeight: p.outbound ? 3 : 0 }}
-                    title={`${p.period}: Outbound ${p.outbound.toLocaleString('en-US')}`}
-                  />
-                </div>
-                <small title={p.period}>{fmt(p.period, period)}</small>
-              </div>
-            ))}
-          </div>
+          <MovementTrendChart
+            data={points}
+            height={240}
+            emptyText="No movement transactions recorded for this period."
+          />
           <p className="phase6-chart-note">
             Period Total: Inbound{' '}
             <b>{points.reduce((n, p) => n + p.inbound, 0).toLocaleString('en-US')}</b> · Outbound{' '}

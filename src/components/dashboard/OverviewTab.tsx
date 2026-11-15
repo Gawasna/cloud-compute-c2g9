@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { Role } from '@/components/layout/Sidebar';
 import { StockBadge, Skeleton } from '@/components/ui';
 import {
@@ -11,6 +11,7 @@ import {
   ExternalLinkIcon,
   renderCategoryIcon,
 } from '@/components/ui/Icons';
+import { MovementTrendChart, StockDistributionChart } from '@/components/charts';
 import { useI18n } from '@/lib/i18n';
 import type { Product, ApiDashboard } from './types';
 
@@ -38,8 +39,30 @@ export default function OverviewTab({
 
   const recentProducts = products.slice(0, 6);
 
-  const donutInStockPercent = products.length ? (inStockCount / products.length) * 100 : 0;
-  const donutLowPercent = products.length ? ((inStockCount + lowCount) / products.length) * 100 : 0;
+  const movementTrendPoints = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = new Date();
+      day.setDate(day.getDate() - 6 + i);
+      const sameDay = (v: string) =>
+        new Date(v).toDateString() === day.toDateString();
+      const daily = (dashboardStats?.history || []).filter((tItem) =>
+        sameDay(tItem.day)
+      );
+      const ins = daily
+        .filter((tItem) => tItem.type === 'IN')
+        .reduce((s, tItem) => s + Number(tItem.quantity), 0);
+      const outs = daily
+        .filter((tItem) => tItem.type === 'OUT')
+        .reduce((s, tItem) => s + Number(tItem.quantity), 0);
+
+      return {
+        period: day.toISOString(),
+        label: formatWeekday(day),
+        inbound: ins,
+        outbound: outs,
+      };
+    });
+  }, [dashboardStats?.history, formatWeekday]);
 
   return (
     <>
@@ -110,47 +133,17 @@ export default function OverviewTab({
             </span>
           </div>
 
-          <div className="chart">
-            {Array.from({ length: 7 }, (_, i) => {
-              const day = new Date();
-              day.setDate(day.getDate() - 6 + i);
-              const sameDay = (v: string) =>
-                new Date(v).toDateString() === day.toDateString();
-              const daily = (dashboardStats?.history || []).filter((tItem) =>
-                sameDay(tItem.day)
-              );
-              const ins = daily
-                .filter((tItem) => tItem.type === 'IN')
-                .reduce((s, tItem) => s + Number(tItem.quantity), 0);
-              const outs = daily
-                .filter((tItem) => tItem.type === 'OUT')
-                .reduce((s, tItem) => s + Number(tItem.quantity), 0);
-              const max = Math.max(
-                25,
-                ...(dashboardStats?.history || []).map((tItem) => Number(tItem.quantity))
-              );
-
-              return (
-                <div className="chart-col" key={day.toISOString()}>
-                  <div className="bars">
-                    <span
-                      className="bar bar-in"
-                      title={`${t.common.inbound} ${ins}`}
-                      style={{ height: `${Math.max(4, (ins / max) * 100)}%` }}
-                    />
-                    <span
-                      className="bar bar-out"
-                      title={`${t.common.outbound} ${outs}`}
-                      style={{ height: `${Math.max(4, (outs / max) * 100)}%` }}
-                    />
-                  </div>
-                  <small>
-                    {formatWeekday(day)}
-                  </small>
-                </div>
-              );
-            })}
-          </div>
+          {loading ? (
+            <div className="chart-placeholder" style={{ height: '220px' }}>
+              {t.overview.loadingCatalog}
+            </div>
+          ) : (
+            <MovementTrendChart
+              data={movementTrendPoints}
+              height={220}
+              emptyText={t.reports?.empty || 'No transaction history in the past 7 days'}
+            />
+          )}
         </section>
 
         <section className="panel alerts-panel">
@@ -161,32 +154,20 @@ export default function OverviewTab({
             </div>
           </div>
 
-          <div
-            className="donut"
-            style={{
-              background: `conic-gradient(#65bf92 0 ${donutInStockPercent}%, #ff9b93 ${donutInStockPercent}% ${donutLowPercent}%, #a9a9bd ${donutLowPercent}% 100%)`,
-            }}
-          >
-            <div>
-              <b>{formatNumber(products.length)}</b>
-              <span>{t.common.items}</span>
+          {loading ? (
+            <div className="chart-placeholder" style={{ height: '230px' }}>
+              {t.overview.loadingCatalog}
             </div>
-          </div>
-
-          <div className="donut-legend">
-            <div>
-              <i className="dot green" />
-              {t.common.inStock} <strong>{formatNumber(inStockCount)}</strong>
-            </div>
-            <div>
-              <i className="dot coral" />
-              {t.common.lowStock} <strong>{formatNumber(lowCount)}</strong>
-            </div>
-            <div>
-              <i className="dot gray" />
-              {t.common.outOfStock} <strong>{formatNumber(outCount)}</strong>
-            </div>
-          </div>
+          ) : (
+            <StockDistributionChart
+              inStockCount={inStockCount}
+              lowStockCount={lowCount}
+              outOfStockCount={outCount}
+              totalProducts={products.length}
+              height={180}
+              showLegend={true}
+            />
+          )}
         </section>
       </div>
 
