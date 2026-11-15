@@ -11,7 +11,7 @@ export const GET = createApiHandler(
     const kind = searchParams.get("kind") || "inventory";
 
     if (!["inventory", "low-stock", "movements"].includes(kind)) {
-      throw new ApiError(400, "Loại báo cáo không hợp lệ");
+      throw new ApiError(400, "Invalid report type");
     }
 
     let columns: string[] = [];
@@ -20,7 +20,10 @@ export const GET = createApiHandler(
 
     if (kind === "inventory") {
       const res = await query(
-        `select p.sku, p.name, c.name as category, u.symbol as unit,
+        `select p.sku,
+          coalesce(nullif(p.name_en, ''), p.name) as name,
+          coalesce(nullif(c.name_en, ''), c.name) as category,
+          coalesce(nullif(u.symbol_en, ''), u.symbol) as unit,
           p.stock_quantity, p.minimum_stock, p.cost_price, (p.stock_quantity * p.cost_price) as inventory_value
         from public.products p
         join public.categories c on c.id = p.category_id
@@ -28,7 +31,16 @@ export const GET = createApiHandler(
         where p.deleted_at is null
         order by p.sku`
       );
-      columns = ["SKU", "Tên sản phẩm", "Danh mục", "Đơn vị", "Tồn kho", "Ngưỡng tối thiểu", "Giá vốn (VND)", "Giá trị tồn (VND)"];
+      columns = [
+        "SKU",
+        "Product Name",
+        "Category",
+        "Unit",
+        "Stock Quantity",
+        "Minimum Stock",
+        "Cost Price (VND)",
+        "Inventory Value (VND)",
+      ];
       rows = res.rows.map((x) => [
         x.sku,
         x.name,
@@ -41,14 +53,23 @@ export const GET = createApiHandler(
       ]);
     } else if (kind === "low-stock") {
       const res = await query(
-        `select sku, name, stock_quantity, minimum_stock,
-          greatest(minimum_stock - stock_quantity, 0) as shortage,
-          case when stock_quantity = 0 then 'Hết hàng' else 'Sắp hết' end as status
-        from public.products
-        where deleted_at is null and (stock_quantity = 0 or stock_quantity < minimum_stock)
-        order by stock_quantity, sku`
+        `select p.sku,
+          coalesce(nullif(p.name_en, ''), p.name) as name,
+          p.stock_quantity, p.minimum_stock,
+          greatest(p.minimum_stock - p.stock_quantity, 0) as shortage,
+          case when p.stock_quantity = 0 then 'Out of Stock' else 'Low Stock' end as status
+        from public.products p
+        where p.deleted_at is null and (p.stock_quantity = 0 or p.stock_quantity < p.minimum_stock)
+        order by p.stock_quantity, p.sku`
       );
-      columns = ["SKU", "Tên sản phẩm", "Tồn kho", "Ngưỡng tối thiểu", "Cần bổ sung", "Trạng thái"];
+      columns = [
+        "SKU",
+        "Product Name",
+        "Stock Quantity",
+        "Minimum Stock",
+        "Shortage",
+        "Status",
+      ];
       rows = res.rows.map((x) => [
         x.sku,
         x.name,
@@ -59,7 +80,9 @@ export const GET = createApiHandler(
       ]);
     } else {
       const res = await query(
-        `select m.created_at, p.sku, p.name, m.type, m.quantity, m.balance_after,
+        `select m.created_at, p.sku,
+          coalesce(nullif(p.name_en, ''), p.name) as name,
+          m.type, m.quantity, m.balance_after,
           coalesce(pr.display_name, '') as actor, coalesce(m.note, '') as note
         from public.stock_movements m
         join public.products p on p.id = m.product_id
@@ -69,7 +92,16 @@ export const GET = createApiHandler(
       );
       truncated = res.rows.length > MOVEMENT_EXPORT_LIMIT;
       if (truncated) res.rows.length = MOVEMENT_EXPORT_LIMIT;
-      columns = ["Thời gian (UTC)", "SKU", "Tên sản phẩm", "Loại", "Số lượng", "Tồn sau giao dịch", "Người thực hiện", "Ghi chú"];
+      columns = [
+        "Timestamp (UTC)",
+        "SKU",
+        "Product Name",
+        "Type",
+        "Quantity",
+        "Balance After",
+        "Performed By",
+        "Note",
+      ];
       rows = res.rows.map((x) => [
         new Date(x.created_at).toISOString(),
         x.sku,

@@ -7,6 +7,7 @@ export interface ProductModalProps {
   onClose: () => void;
   onSave: (productData: {
     name: string;
+    nameEn?: string;
     sku: string;
     categoryId: string;
     unitId: string;
@@ -28,13 +29,19 @@ export default function ProductModal({
   units,
   editProduct,
 }: ProductModalProps) {
-  const [name, setName] = useState(editProduct ? editProduct.name : '');
+  const initialName = editProduct ? (editProduct.nameOriginal || editProduct.name) : '';
+  const initialNameEn = editProduct ? (editProduct.nameEn || '') : '';
+  const isInitiallySame = Boolean(initialName && initialNameEn && initialName === initialNameEn);
+
+  const [name, setName] = useState(initialName);
+  const [nameEn, setNameEn] = useState(initialNameEn);
+  const [nameAlreadyEnglish, setNameAlreadyEnglish] = useState(isInitiallySame);
   const [sku, setSku] = useState(editProduct ? editProduct.sku : '');
-  const [categoryName, setCategoryName] = useState(
-    editProduct ? editProduct.category : categories[0]?.name || ''
+  const [categoryId, setCategoryId] = useState(
+    editProduct?.categoryId || categories[0]?.id || ''
   );
-  const [unitSymbol, setUnitSymbol] = useState(
-    editProduct ? editProduct.unit : units[0]?.symbol || ''
+  const [unitId, setUnitId] = useState(
+    editProduct?.unitId || units[0]?.id || ''
   );
   const [price, setPrice] = useState(
     editProduct ? String(editProduct.price) : '0'
@@ -48,17 +55,25 @@ export default function ProductModal({
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const toggleNameAlreadyEnglish = (checked: boolean) => {
+    setNameAlreadyEnglish(checked);
+    if (checked) {
+      setNameEn(name);
+    }
+  };
+
   const handleConfirm = async () => {
     const trimmedName = name.trim();
+    const trimmedNameEn = (nameAlreadyEnglish ? trimmedName : nameEn.trim()) || trimmedName;
     const trimmedSku = sku.trim().toUpperCase();
-    const targetCategory = categories.find((c) => c.name === categoryName);
-    const targetUnit = units.find((u) => u.symbol === unitSymbol);
+    const targetCategory = categories.find((c) => c.id === categoryId) || categories[0];
+    const targetUnit = units.find((u) => u.id === unitId) || units[0];
     const numPrice = Number(price);
     const numMinimum = Number(minimum);
     const numStock = Number(stock);
 
     if (!trimmedName || !trimmedSku || !targetCategory || !targetUnit) {
-      setError('Vui lòng nhập đầy đủ tên sản phẩm, mã SKU và chọn danh mục, đơn vị tính.');
+      setError('Please provide product name, SKU, category, and unit.');
       return;
     }
 
@@ -70,13 +85,13 @@ export default function ProductModal({
       !Number.isInteger(numStock) ||
       numStock < 0
     ) {
-      setError('Giá vốn và số lượng phải là số không âm hợp lệ.');
+      setError('Cost price and stock quantities must be valid non-negative numbers.');
       return;
     }
 
     if (!editProduct && numStock > 0) {
       setError(
-        'Sản phẩm mới phải có số lượng tồn ban đầu bằng 0. Sau khi tạo, hãy lập phiếu nhập kho để ghi nhận tồn và lịch sử giao dịch.'
+        'New products must have an initial stock of 0. Create a stock-in movement ticket afterwards.'
       );
       return;
     }
@@ -87,6 +102,7 @@ export default function ProductModal({
     try {
       await onSave({
         name: trimmedName,
+        nameEn: trimmedNameEn,
         sku: trimmedSku,
         categoryId: targetCategory.id,
         unitId: targetUnit.id,
@@ -97,7 +113,7 @@ export default function ProductModal({
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lưu sản phẩm thất bại.');
+      setError(err instanceof Error ? err.message : 'Failed to save product.');
     } finally {
       setSaving(false);
     }
@@ -107,11 +123,11 @@ export default function ProductModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={editProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}
+      title={editProduct ? 'Edit Product' : 'Add New Product'}
       description={
         editProduct
-          ? 'Cập nhật thông tin chi tiết của sản phẩm hiện có.'
-          : 'Vui lòng chọn danh mục và đơn vị tính đã được thiết lập sẵn trong hệ thống.'
+          ? 'Update the details and English name of the product.'
+          : 'Choose an existing category and unit configured in the system.'
       }
       actions={
         <>
@@ -121,7 +137,7 @@ export default function ProductModal({
             onClick={onClose}
             disabled={saving}
           >
-            Hủy
+            Cancel
           </button>
           <button
             type="button"
@@ -129,60 +145,95 @@ export default function ProductModal({
             disabled={saving}
             onClick={handleConfirm}
           >
-            {saving ? 'Đang lưu...' : 'Xác nhận'}
+            {saving ? 'Saving...' : 'Confirm'}
           </button>
         </>
       }
     >
       <div className="form-grid">
         <label className="wide">
-          Tên sản phẩm
+          Product Name
           <input
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Ví dụ: Cáp sạc Type-C nhanh 65W"
+            maxLength={160}
+            onChange={(e) => {
+              const val = e.target.value;
+              setName(val);
+              if (nameAlreadyEnglish) setNameEn(val);
+            }}
+            placeholder="e.g. Logitech G304 Wireless Mouse"
           />
         </label>
 
+        <div className="wide" style={{ padding: '2px 0 4px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 500 }}>
+            <input
+              type="checkbox"
+              checked={nameAlreadyEnglish}
+              onChange={(e) => toggleNameAlreadyEnglish(e.target.checked)}
+              style={{ width: 17, height: 17, flex: 'none', accentColor: '#7569eb' }}
+            />
+            <span>Product name is already in English</span>
+          </label>
+          <p className="hint" style={{ margin: '5px 0 0 27px' }}>
+            {nameAlreadyEnglish
+              ? 'The English name will be saved automatically using the product name above.'
+              : 'Enter the original name above, then provide its English translation below.'}
+          </p>
+        </div>
+
+        {!nameAlreadyEnglish && (
+          <label className="wide">
+            English Product Name
+            <input
+              value={nameEn}
+              maxLength={160}
+              placeholder="e.g. Logitech G304 Wireless Mouse"
+              onChange={(e) => setNameEn(e.target.value)}
+            />
+          </label>
+        )}
+
         <label>
-          Mã SKU
+          SKU Code
           <input
             value={sku}
+            maxLength={40}
             onChange={(e) => setSku(e.target.value)}
-            placeholder="Ví dụ: CAB-001"
+            placeholder="e.g. ELE-001"
           />
         </label>
 
         <label>
-          Danh mục
+          Category
           <select
-            value={categoryName}
-            onChange={(e) => setCategoryName(e.target.value)}
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
           >
             {categories.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
+              <option key={c.id} value={c.id}>
+                {c.name_en?.trim() || c.name}
               </option>
             ))}
           </select>
         </label>
 
         <label>
-          Đơn vị tính
+          Unit of Measure
           <select
-            value={unitSymbol}
-            onChange={(e) => setUnitSymbol(e.target.value)}
+            value={unitId}
+            onChange={(e) => setUnitId(e.target.value)}
           >
             {units.map((u) => (
-              <option key={u.id} value={u.symbol}>
-                {u.name} ({u.symbol})
+              <option key={u.id} value={u.id}>
+                {u.name_en?.trim() || u.name} ({u.symbol_en?.trim() || u.symbol})
               </option>
             ))}
           </select>
         </label>
 
         <label>
-          Giá vốn (VNĐ)
+          Cost Price (VND)
           <input
             type="number"
             min="0"
@@ -192,7 +243,7 @@ export default function ProductModal({
         </label>
 
         <label>
-          Tồn ban đầu (nhập kho bằng phiếu)
+          Initial Stock (0; use Stock In ticket)
           <input
             type="number"
             min="0"
@@ -203,7 +254,7 @@ export default function ProductModal({
         </label>
 
         <label>
-          Ngưỡng cảnh báo tối thiểu
+          Low Stock Threshold
           <input
             type="number"
             min="0"

@@ -12,29 +12,31 @@ export default function StockMovementTab({
   onCreateTicket,
 }: StockMovementTabProps) {
   const getCategoryIcon = (category: string) => {
-    if (category === 'Điện tử') return '⌁';
-    if (category === 'Gia dụng') return '▤';
+    const c = category.toLowerCase();
+    if (c.includes('electronics') || c.includes('điện tử')) return '⌁';
+    if (c.includes('home') || c.includes('gia dụng')) return '▤';
+    if (c.includes('fashion') || c.includes('thời trang')) return '◈';
     return '▣';
   };
 
   return (
     <>
       <div className="inline-heading">
-        <p>Ghi nhận phiếu nhập và xuất, tự động cập nhật số lượng tồn kho và lịch sử giao dịch.</p>
+        <p>Record stock movements, automatically updating on-hand quantities and transaction logs.</p>
         <button
           type="button"
           className="btn primary"
           onClick={onCreateTicket}
         >
-          ＋ Tạo phiếu nhập / xuất
+          ＋ Create Stock Movement
         </button>
       </div>
 
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Tồn kho hiện tại</h2>
-            <p>Đối chiếu số lượng tồn thực tế trước khi xuất hoặc nhập hàng</p>
+            <h2>Current Stock Levels</h2>
+            <p>Verify physical inventory before processing inbound or outbound movements</p>
           </div>
         </div>
 
@@ -42,12 +44,12 @@ export default function StockMovementTab({
           <table>
             <thead>
               <tr>
-                <th>Tên sản phẩm</th>
-                <th>Mã SKU</th>
-                <th>Danh mục</th>
-                <th>Tồn kho</th>
-                <th>Ngưỡng</th>
-                <th>Trạng thái</th>
+                <th>Product Name</th>
+                <th>SKU</th>
+                <th>Category</th>
+                <th>Stock</th>
+                <th>Threshold</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -56,13 +58,20 @@ export default function StockMovementTab({
                   <td>
                     <div className="item-name">
                       <span className="item-avatar">{getCategoryIcon(p.category)}</span>
-                      <strong>{p.name}</strong>
+                      <div>
+                        <strong>{p.name}</strong>
+                        {p.nameOriginal && p.nameOriginal !== p.name && (
+                          <span className="hint" style={{ display: 'block', fontSize: 12 }}>
+                            {p.nameOriginal}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="mono">{p.sku}</td>
                   <td>{p.category}</td>
                   <td>
-                    {p.stock.toLocaleString('vi-VN')} {p.unit.toLowerCase()}
+                    {p.stock.toLocaleString('en-US')} {p.unit.toLowerCase()}
                   </td>
                   <td>{p.minimum}</td>
                   <td>
@@ -73,7 +82,7 @@ export default function StockMovementTab({
               {products.length === 0 && (
                 <tr>
                   <td colSpan={6} className="empty">
-                    Chưa có sản phẩm nào trong kho.
+                    No products found in warehouse.
                   </td>
                 </tr>
               )}

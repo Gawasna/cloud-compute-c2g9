@@ -4,6 +4,7 @@ export type Role = 'admin' | 'staff' | 'viewer';
 export type Page =
   | 'dashboard'
   | 'products'
+  | 'archived'
   | 'categories'
   | 'stock'
   | 'transactions'
@@ -19,19 +20,21 @@ export interface SidebarProps {
 }
 
 export const PAGE_NAMES: Record<Page, string> = {
-  dashboard: 'Tổng quan',
-  products: 'Sản phẩm',
-  categories: 'Danh mục',
-  stock: 'Nhập / xuất kho',
-  transactions: 'Lịch sử giao dịch',
-  reports: 'Báo cáo',
-  users: 'Người dùng',
+  dashboard: 'Overview',
+  products: 'Products',
+  archived: 'Archived Products',
+  categories: 'Categories',
+  stock: 'Stock In / Out',
+  transactions: 'Transaction History',
+  reports: 'Reports',
+  users: 'User Management',
 };
 
 export const ROLE_PERMISSIONS: Record<Role, Page[]> = {
   admin: [
     'dashboard',
     'products',
+    'archived',
     'categories',
     'stock',
     'transactions',
@@ -43,14 +46,15 @@ export const ROLE_PERMISSIONS: Record<Role, Page[]> = {
 };
 
 export const ROLE_NAMES: Record<Role, string> = {
-  admin: 'Quản trị viên',
-  staff: 'Nhân viên kho',
-  viewer: 'Người xem báo cáo',
+  admin: 'Administrator',
+  staff: 'Warehouse Staff',
+  viewer: 'Report Viewer',
 };
 
 export const PAGE_ICONS: Record<Page, string> = {
   dashboard: '◫',
   products: '◈',
+  archived: '▤',
   categories: '▦',
   stock: '⇅',
   transactions: '☷',
@@ -72,22 +76,22 @@ export default function Sidebar({
       case 'admin':
         return 'A';
       case 'staff':
-        return 'K';
+        return 'S';
       case 'viewer':
       default:
-        return 'B';
+        return 'V';
     }
   };
 
   const getRoleTitle = (r: Role) => {
     switch (r) {
       case 'admin':
-        return 'Quản trị hệ thống';
+        return 'System Administrator';
       case 'staff':
-        return 'Nhân viên kho';
+        return 'Warehouse Staff';
       case 'viewer':
       default:
-        return 'Bộ phận báo cáo';
+        return 'Report Viewer';
     }
   };
 
@@ -100,7 +104,7 @@ export default function Sidebar({
         </span>
       </div>
 
-      <div className="sidebar-caption">QUẢN LÝ KHO</div>
+      <div className="sidebar-caption">INVENTORY MANAGEMENT</div>
 
       <nav>
         {allowedPages.map((pageKey) => {
@@ -122,7 +126,7 @@ export default function Sidebar({
       </nav>
 
       <div className="sidebar-bottom">
-        <div className="demo-flag">● HỆ THỐNG ĐANG HOẠT ĐỘNG</div>
+        <div className="demo-flag">● SYSTEM ONLINE</div>
         <div className="profile">
           <span className="avatar">{getAvatarChar(role)}</span>
           <div>
