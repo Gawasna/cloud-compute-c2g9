@@ -66,6 +66,9 @@ export function verifySupabaseSecret(
   return false;
 }
 
+export const SUPABASE_PROJECT_REF = "gsejxaasdujmqveshqyf";
+export const SUPABASE_DASHBOARD_URL = `https://supabase.com/dashboard/project/${SUPABASE_PROJECT_REF}`;
+
 /**
  * Formats a Supabase Database Webhook event into an HTML alert for Telegram.
  */
@@ -97,6 +100,8 @@ export function formatSupabaseWebhookAlert(payload: SupabaseWebhookPayload): str
     lines.push(`<b>Previous Data:</b>\n${oldPreview}`);
   }
 
+  lines.push(``);
+  lines.push(`🔗 <a href="${SUPABASE_DASHBOARD_URL}/editor">View in Supabase Table Editor</a>`);
   lines.push(``);
   lines.push(`<i>Dispatched by Cloudflare Edge Watchdog</i>`);
 

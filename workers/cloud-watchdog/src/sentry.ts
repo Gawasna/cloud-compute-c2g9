@@ -125,8 +125,11 @@ export function formatSentryAlert(payload: SentryWebhookPayload): string {
   const level = (event?.level || issue?.level || payload.level || "error").toUpperCase();
   const environment = event?.environment || "production";
   const release = event?.release || "N/A";
-  const link = issue?.permalink || event?.web_url || event?.url || payload.url || payload.web_url || "https://sentry.io";
-  const projectName = project?.name || project?.slug || "Cloud Platform";
+  const rawLink = issue?.permalink || event?.web_url || event?.url || payload.url || payload.web_url;
+  const link = rawLink && !rawLink.includes("sentry.io/organizations/cloudstock")
+    ? rawLink
+    : (issue?.id ? `https://gawasu.sentry.io/issues/?query=${encodeURIComponent(String(issue.id))}` : "https://gawasu.sentry.io/issues/?project=cloudstock");
+  const projectName = project?.name || project?.slug || "CloudStock (gawasu)";
 
   return [
     `<b>[SENTRY ALERT] ${escapeHtml(title)}</b>`,

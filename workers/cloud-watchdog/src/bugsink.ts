@@ -33,7 +33,7 @@ export const BUGSINK_SPIKE_ALERTED_KEY = "bugsink:spike:alerted";
 export const BUGSINK_LAST_EVENTS_KEY = "bugsink:telemetry:last_events";
 export const DEFAULT_BUGSINK_SPIKE_THRESHOLD = 15;
 export const BUGSINK_ALERT_TTL_SEC = 1800; // 30 minutes anti-flood
-export const BUGSINK_DASHBOARD_URL = "https://elitedesk-hp.ts.net:8443";
+export const BUGSINK_DASHBOARD_URL = "https://hp.tail64e493.ts.net:8443";
 
 export interface SimpleKV {
   get: (key: string, type?: string) => Promise<string | null>;

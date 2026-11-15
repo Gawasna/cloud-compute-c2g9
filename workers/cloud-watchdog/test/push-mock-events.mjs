@@ -18,12 +18,12 @@ async function pushSentryMock() {
         id: issueId,
         title: "TypeError: Cannot read properties of undefined (reading 'stock_quantity')",
         culprit: "/api/movements/outbound",
-        permalink: "https://sentry.io/organizations/cloudstock/issues/998821/",
+        permalink: "https://gawasu.sentry.io/issues/?project=cloudstock",
         level: "fatal",
         status: "unresolved",
         project: {
-          slug: "cloudstock-prod",
-          name: "CloudStock Production",
+          slug: "cloudstock",
+          name: "CloudStock (gawasu)",
         },
       },
       event: {
