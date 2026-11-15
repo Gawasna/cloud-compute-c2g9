@@ -156,7 +156,7 @@ describe("Telegram Slash Commands Handler Tests", () => {
       };
 
       await handleTelegramCommand(update, mockEnv);
-      assert.match(sentBody, /SYSTEM SNAPSHOT/);
+      assert.match(sentBody, /HỆ THỐNG GIÁM SÁT TOÀN DIỆN|SYSTEM SNAPSHOT/);
       assert.match(sentBody, /HOẠT ĐỘNG BÌNH THƯỜNG/);
       assert.match(sentBody, /connected/);
       assert.match(sentBody, /200/);

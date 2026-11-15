@@ -8,6 +8,10 @@ Format follows [Conventional Commits](https://www.conventionalcommits.org/) and 
 ## [Unreleased]
 
 ### Operations / Watchdog
+- Dead Man's Switch (DMS) inverted heartbeat protocol for on-premise HP EliteDesk node monitoring behind NAT (TASK-20261115-0002 / Issue #21)
+- Telemetry Ring Buffer (48 points / 8h sliding window) on Cloudflare KV with zero-cost write budgeting (288 writes/day) (TASK-20261115-0002)
+- Telegram Slash Commands enhancement: unified 2-tier `/status` dashboard, `/chart` visualization (QuickChart dual-axis line chart), and Unicode sparklines (TASK-20261115-0002)
+- On-premise systemd check-in script and local operations runbook (`RUNBOOK_DMS.local.md`) (TASK-20261115-0002)
 - Cloudflare Worker Watchdog (`workers/cloud-watchdog`) with Edge Cron Trigger (10m) for $0 keep-alive & downtime monitoring (TASK-20261115-0001)
 - Automatic transient cold-start absorption (2s retry) and Telegram HTML alert dispatcher (TASK-20261115-0001)
 - Telegram Slash Commands (`/status`, `/ping`, `/help`) via Edge Webhook with chat ID whitelisting (TASK-20261115-0001)

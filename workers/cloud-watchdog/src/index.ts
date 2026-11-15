@@ -1,5 +1,17 @@
-import { sendTelegramAlert, type TelegramAlertPayload } from "./notifier.ts";
+import {
+  sendTelegramAlert,
+  sendTelegramDmsAlert,
+  sendTelegramDmsRecovery,
+  type TelegramAlertPayload,
+} from "./notifier.ts";
 import { handleTelegramCommand, type TelegramUpdate } from "./commands.ts";
+import {
+  verifyDmsToken,
+  recordCheckin,
+  appendTelemetryPoint,
+  evaluateDmsTimeout,
+  type DmsCheckinPayload,
+} from "./dms.ts";
 
 export interface Env {
   DEFAULT_HEALTH_ENDPOINT: string;
@@ -8,6 +20,9 @@ export interface Env {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
+  DMS_SECRET_TOKEN?: string;
+  DMS_GRACE_PERIOD_SEC?: string;
+  WATCHDOG_KV?: KVNamespace;
 }
 
 export interface ProbeResult {
@@ -68,15 +83,16 @@ export async function executeProbe(targetUrl: string, timeoutMs = 8000): Promise
 }
 
 /**
- * Executes the watchdog heartbeat probe cycle.
- * Incorporates a 1-time retry delay of 2 seconds if the first attempt fails,
- * absorbing temporary Vercel serverless cold starts.
+ * Executes the watchdog heartbeat probe cycle (runs every 10 min).
+ * 1. Probes Vercel + Supabase health with 1-time retry for cold starts.
+ * 2. Saves cloud latency observation into the Telemetry Ring Buffer.
+ * 3. Evaluates Dead Man's Switch on-premise node timeout and alerts if silent > grace period.
  */
 export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
   const target = env.HEALTH_ENDPOINT || env.DEFAULT_HEALTH_ENDPOINT;
   console.log(`[Watchdog] Initiating health probe to: ${target}`);
 
-  // Probe attempt 1
+  // 1. Probe attempt 1
   let result = await executeProbe(target);
 
   // If first attempt fails, delay 2 seconds to absorb serverless cold start
@@ -86,6 +102,7 @@ export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
     result = await executeProbe(target);
   }
 
+  // 2. Telemetry and Alerting for Cloud Layer
   if (result.ok) {
     console.log(`[Watchdog] Health pulse verified OK in ${result.durationMs}ms. DB status: ${result.dbStatus}`);
   } else {
@@ -106,6 +123,29 @@ export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
     }
   }
 
+  // 3. Persist Cloud Telemetry Point into Ring Buffer
+  if (env.WATCHDOG_KV) {
+    await appendTelemetryPoint(env.WATCHDOG_KV, {
+      cloud_ok: result.ok,
+      cloud_duration_ms: result.durationMs,
+      db_status: result.dbStatus,
+    });
+
+    // 4. Evaluate Dead Man's Switch for On-Premise Node
+    const graceSec = parseInt(env.DMS_GRACE_PERIOD_SEC || "1200", 10);
+    const dmsCheck = await evaluateDmsTimeout(env.WATCHDOG_KV, graceSec);
+
+    if (dmsCheck.shouldAlert && dmsCheck.state && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+      console.warn(`[DMS] Triggering Dead Man's Switch alert! Node ${dmsCheck.state.node} silent for ${dmsCheck.diffSec}s`);
+      await sendTelegramDmsAlert(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, {
+        node: dmsCheck.state.node,
+        diffSec: dmsCheck.diffSec,
+        gracePeriodSec: graceSec,
+        lastSeenIso: new Date(dmsCheck.state.last_seen_epoch).toISOString(),
+      });
+    }
+  }
+
   return result;
 }
 
@@ -117,7 +157,78 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    // 1. Telegram Webhook Handler for Slash Commands
+    // 1. Dead Man's Switch Check-in (Inverted Heartbeat from HP EliteDesk Node)
+    if (url.pathname === "/api/dms/checkin" && request.method === "POST") {
+      if (env.DMS_SECRET_TOKEN) {
+        const authHeader = request.headers.get("authorization");
+        const authorized = await verifyDmsToken(authHeader, env.DMS_SECRET_TOKEN);
+        if (!authorized) {
+          console.warn("[DMS] Unauthorized check-in attempt: invalid token");
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      if (!env.WATCHDOG_KV) {
+        console.error("[DMS] KV Namespace WATCHDOG_KV is not bound");
+        return new Response(JSON.stringify({ error: "Storage Unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      try {
+        const payload = (await request.json()) as DmsCheckinPayload;
+        if (!payload.node) {
+          return new Response(JSON.stringify({ error: "Missing node identifier" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        const { state, wasRecovered } = await recordCheckin(env.WATCHDOG_KV, payload);
+        console.log(`[DMS] Heartbeat acknowledged from node: ${payload.node} (wasRecovered: ${wasRecovered})`);
+
+        // If node was marked as down and now recovered, dispatch notice to Telegram
+        if (wasRecovered && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+          if (ctx && typeof ctx.waitUntil === "function") {
+            ctx.waitUntil(
+              sendTelegramDmsRecovery(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, {
+                node: payload.node,
+                uptimeKuma: payload.uptime_kuma,
+                loadAvg: payload.load_avg,
+              })
+            );
+          } else {
+            await sendTelegramDmsRecovery(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, {
+              node: payload.node,
+              uptimeKuma: payload.uptime_kuma,
+              loadAvg: payload.load_avg,
+            });
+          }
+        }
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            node: state.node,
+            last_seen_epoch: state.last_seen_epoch,
+            was_recovered: wasRecovered,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      } catch (err: unknown) {
+        console.error("[DMS] Failed to process check-in payload:", err);
+        return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // 2. Telegram Webhook Handler for Slash Commands
     if (url.pathname === "/telegram-webhook" && request.method === "POST") {
       if (env.TELEGRAM_WEBHOOK_SECRET) {
         const incomingSecret = request.headers.get("x-telegram-bot-api-secret-token");
@@ -150,7 +261,7 @@ const worker = {
       }
     }
 
-    // 2. Manual on-demand probe trigger
+    // 3. Manual on-demand probe trigger
     if (url.pathname === "/trigger") {
       const result = await handleWatchdogPulse(env);
       return new Response(JSON.stringify(result, null, 2), {
@@ -159,15 +270,16 @@ const worker = {
       });
     }
 
-    // 3. Worker Health / Info Snapshot
+    // 4. Worker Health / Info Snapshot
     return new Response(
       JSON.stringify(
         {
           service: "Cloud Watchdog Edge Worker",
           status: "online",
           schedule: "*/10 * * * *",
-          endpoints: ["/trigger", "/telegram-webhook"],
+          endpoints: ["/trigger", "/telegram-webhook", "/api/dms/checkin"],
           target: env.HEALTH_ENDPOINT || env.DEFAULT_HEALTH_ENDPOINT,
+          kv_bound: !!env.WATCHDOG_KV,
         },
         null,
         2

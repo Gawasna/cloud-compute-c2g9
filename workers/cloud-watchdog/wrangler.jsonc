@@ -7,8 +7,15 @@
   "triggers": {
     "crons": ["*/10 * * * *"]
   },
+  "kv_namespaces": [
+    {
+      "binding": "WATCHDOG_KV",
+      "id": "0ece3d56d8714cc69791a9c84e5574c5"
+    }
+  ],
   "vars": {
     "DEFAULT_HEALTH_ENDPOINT": "https://cloud-compute-c2g9.vercel.app/api/health",
-    "ALERT_SERVICE_NAME": "Cloud Compute Prod (Vercel + Supabase)"
+    "ALERT_SERVICE_NAME": "Cloud Compute Prod (Vercel + Supabase)",
+    "DMS_GRACE_PERIOD_SEC": "1200"
   }
 }

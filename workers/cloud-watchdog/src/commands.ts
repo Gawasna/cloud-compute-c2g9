@@ -1,4 +1,7 @@
 import { executeProbe, type Env } from "./index.ts";
+import { getDmsState, getTelemetryRingBuffer } from "./dms.ts";
+import { summarizeTelemetry, generateQuickChartUrl } from "./chart.ts";
+import { sendTelegramPhoto, escapeHtml } from "./notifier.ts";
 
 export interface TelegramChat {
   id: number | string;
@@ -24,16 +27,6 @@ export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
-}
-
-/**
- * Escapes HTML special characters for Telegram message safety.
- */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 /**
@@ -90,37 +83,114 @@ export async function handleTelegramCommand(
 
   const rawText = msg.text.trim();
   if (!rawText.startsWith("/")) {
-    // Ignore normal chat messages to prevent group noise
-    return;
+    return; // Ignore regular conversation
   }
 
-  // Strip bot mention if command invoked as /status@c2g9_bot
   const parts = rawText.split(/\s+/);
   const command = parts[0].toLowerCase().split("@")[0];
   const chatId = msg.chat.id;
   const target = env.HEALTH_ENDPOINT || env.DEFAULT_HEALTH_ENDPOINT;
 
   if (command === "/status") {
-    console.log(`[Commands] Executing /status on demand for chat ${chatId}`);
+    console.log(`[Commands] Executing /status for chat ${chatId}`);
+
+    // 1. Live probe Cloud infrastructure
     const probe = await executeProbe(target);
     const serviceName = escapeHtml(env.ALERT_SERVICE_NAME || "Cloud Compute Prod");
-    const statusText = probe.ok ? "HOẠT ĐỘNG BÌNH THƯỜNG" : "CẢNH BÁO / BẤT THƯỜNG";
+    const cloudStatusText = probe.ok ? "HOẠT ĐỘNG BÌNH THƯỜNG" : "CẢNH BÁO / BẤT THƯỜNG";
     const dbDisplay = escapeHtml(probe.dbStatus || "disconnected");
 
+    // 2. Query On-Premise DMS state from KV
+    let onPremText = "Chưa cấu hình KV hoặc chưa có bản ghi check-in.";
+    let summaryText = "";
+
+    if (env.WATCHDOG_KV) {
+      const dms = await getDmsState(env.WATCHDOG_KV);
+      const graceSec = parseInt(env.DMS_GRACE_PERIOD_SEC || "1200", 10);
+      const buffer = await getTelemetryRingBuffer(env.WATCHDOG_KV);
+      const summary = summarizeTelemetry(buffer);
+
+      if (dms) {
+        const now = Date.now();
+        const diffSec = Math.floor((now - dms.last_seen_epoch) / 1000);
+        const diffMin = Math.round(diffSec / 60);
+        const isUp = diffSec <= graceSec;
+        const statusBadge = isUp ? "ONLINE (Đang kết nối)" : "OFFLINE / MẤT TÍN HIỆU";
+
+        onPremText = [
+          `• <b>Node:</b> <code>${escapeHtml(dms.node)}</code> (${statusBadge})`,
+          `• <b>Check-in lần cuối:</b> <code>${diffMin} phút trước (${diffSec}s)</code>`,
+          `• <b>Uptime Kuma:</b> <code>${escapeHtml(dms.uptime_kuma || "up")}</code>`,
+          `• <b>Load Average:</b> <code>${dms.load_avg ?? "N/A"}</code> | <b>RAM:</b> <code>${dms.memory_used_mb ?? "N/A"}MB</code>`,
+        ].join("\n");
+      }
+
+      if (summary.pointCount > 0) {
+        summaryText = [
+          ``,
+          `<b>3. Xu Hướng Đo Đạc (8 Giờ Gần Nhất - ${summary.pointCount} mẫu):</b>`,
+          `• Cloud Latency: <code>${summary.cloudLatencySpark}</code> (TB: ${summary.avgCloudLatency}ms, Max: ${summary.maxCloudLatency}ms)`,
+          `• HP Node Load:  <code>${summary.hpLoadSpark}</code> (TB: ${summary.avgHpLoad})`,
+          `<i>(Gõ <code>/chart</code> để xem biểu đồ chi tiết)</i>`,
+        ].join("\n");
+      }
+    }
+
     const reply = [
-      `<b>[SYSTEM SNAPSHOT] ${serviceName}</b>`,
+      `<b>[HỆ THỐNG GIÁM SÁT TOÀN DIỆN]</b>`,
+      `Dịch vụ: <b>${serviceName}</b>`,
       ``,
-      `<b>Tình trạng:</b> ${statusText}`,
-      `<b>HTTP Status:</b> <code>${probe.statusCode ?? "TIMEOUT"}</code>`,
-      `<b>Database Status:</b> <code>${dbDisplay}</code>`,
-      `<b>Độ trễ phản hồi:</b> <code>${probe.durationMs}ms</code>`,
-      `<b>Target Endpoint:</b> <code>${escapeHtml(target)}</code>`,
-      `<b>Thời điểm đo:</b> <code>${new Date().toISOString()}</code>`,
+      `<b>1. Cụm Đám Mây (Vercel & Supabase):</b>`,
+      `• <b>Trạng thái:</b> ${cloudStatusText}`,
+      `• <b>HTTP Status:</b> <code>${probe.statusCode ?? "TIMEOUT"}</code>`,
+      `• <b>Database:</b> <code>${dbDisplay}</code>`,
+      `• <b>Độ trễ:</b> <code>${probe.durationMs}ms</code>`,
       ``,
-      `<i>Tra cứu trực tiếp từ Cloudflare Edge</i>`,
+      `<b>2. Cụm On-Premise (HP EliteDesk DMS):</b>`,
+      onPremText,
+      summaryText,
+      ``,
+      `<i>Thời điểm đánh giá: ${new Date().toISOString()}</i>`,
     ].join("\n");
 
     await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, reply);
+  } else if (command === "/chart") {
+    console.log(`[Commands] Executing /chart for chat ${chatId}`);
+
+    if (!env.WATCHDOG_KV) {
+      await sendTelegramReply(
+        env.TELEGRAM_BOT_TOKEN,
+        chatId,
+        "Lưu trữ KV chưa được cấu hình. Không thể kết xuất biểu đồ."
+      );
+      return;
+    }
+
+    const buffer = await getTelemetryRingBuffer(env.WATCHDOG_KV);
+    if (!buffer || buffer.length < 2) {
+      await sendTelegramReply(
+        env.TELEGRAM_BOT_TOKEN,
+        chatId,
+        "Chưa có đủ dữ liệu lịch sử để sinh biểu đồ (cần ít nhất 2 chu kỳ đo 10 phút)."
+      );
+      return;
+    }
+
+    const chartUrl = generateQuickChartUrl(buffer);
+    const summary = summarizeTelemetry(buffer);
+    const caption = [
+      `<b>[BIỂU ĐỒ ĐỘ TRỄ & TẢI HỆ THỐNG]</b>`,
+      `Dữ liệu ${buffer.length} chu kỳ gần nhất (chu kỳ 10m).`,
+      `• Cloud Latency TB: <code>${summary.avgCloudLatency}ms</code> (Max: ${summary.maxCloudLatency}ms)`,
+      `• On-Prem Load TB: <code>${summary.avgHpLoad}</code>`,
+    ].join("\n");
+
+    const sent = await sendTelegramPhoto(env.TELEGRAM_BOT_TOKEN, chatId, chartUrl, caption);
+    if (!sent) {
+      // Fallback to text link if photo dispatch failed
+      const fallbackReply = `${caption}\n\n<a href="${chartUrl}">Nhấn vào đây để xem biểu đồ</a>`;
+      await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, fallbackReply);
+    }
   } else if (command === "/ping") {
     console.log(`[Commands] Executing /ping for chat ${chatId}`);
     const start = Date.now();
@@ -153,11 +223,12 @@ export async function handleTelegramCommand(
     const reply = [
       `<b>[DANH MỤC LỆNH GIÁM SÁT WATCHDOG]</b>`,
       ``,
-      `• <code>/status</code> - Thăm dò tức thì Vercel Health & Supabase Database.`,
+      `• <code>/status</code> - Báo cáo tổng thể hợp nhất (Cloud Vercel/Supabase + On-Premise DMS).`,
+      `• <code>/chart</code> - Xuất ảnh biểu đồ trực quan hóa độ trễ và tải CPU (QuickChart).`,
       `• <code>/ping</code> - Đo độ trễ từ Cloudflare Edge đến Vercel API.`,
       `• <code>/help</code> - Hiển thị danh mục lệnh hỗ trợ.`,
       ``,
-      `<i>Worker tự động thăm dò định kỳ mỗi 10 phút.</i>`,
+      `<i>Hệ thống tự động thăm dò và kiểm tra nhịp tim định kỳ mỗi 10 phút.</i>`,
     ].join("\n");
 
     await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, reply);
