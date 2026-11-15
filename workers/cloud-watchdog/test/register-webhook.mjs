@@ -19,11 +19,18 @@ if (!tokenMatch) {
   process.exit(1);
 }
 const token = tokenMatch[1];
+const secretMatch = content.match(/TELEGRAM_WEBHOOK_SECRET=["']?([^"'\r\n]+)["']?/);
+const webhookSecret = secretMatch ? secretMatch[1].trim() : "";
 const webhookUrl = "https://cc-cloud-watchdog.hunglepy05.workers.dev/telegram-webhook";
 
 async function main() {
   console.log("[1/2] Đang đăng ký Webhook URL với Telegram API...");
-  const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
+  let setWebhookEndpoint = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;
+  if (webhookSecret) {
+    console.log("[1/2] Đính kèm secret_token xác thực Telegram Webhook...");
+    setWebhookEndpoint += `&secret_token=${encodeURIComponent(webhookSecret)}`;
+  }
+  const res = await fetch(setWebhookEndpoint);
   const data = await res.json();
   console.log("setWebhook:", data);
 
