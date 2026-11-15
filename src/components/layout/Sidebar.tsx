@@ -1,4 +1,15 @@
 import React from 'react';
+import {
+  LayoutDashboardIcon,
+  PackageIcon,
+  ArchiveIcon,
+  BoxesIcon,
+  ArrowLeftRightIcon,
+  HistoryIcon,
+  FileBarChartIcon,
+  UsersIcon,
+  type IconProps,
+} from '@/components/ui/Icons';
 
 export type Role = 'admin' | 'staff' | 'viewer';
 export type Page =
@@ -51,15 +62,15 @@ export const ROLE_NAMES: Record<Role, string> = {
   viewer: 'Report Viewer',
 };
 
-export const PAGE_ICONS: Record<Page, string> = {
-  dashboard: '◫',
-  products: '◈',
-  archived: '▤',
-  categories: '▦',
-  stock: '⇅',
-  transactions: '☷',
-  reports: '▥',
-  users: '♙',
+export const PAGE_ICONS: Record<Page, React.ComponentType<IconProps>> = {
+  dashboard: LayoutDashboardIcon,
+  products: PackageIcon,
+  archived: ArchiveIcon,
+  categories: BoxesIcon,
+  stock: ArrowLeftRightIcon,
+  transactions: HistoryIcon,
+  reports: FileBarChartIcon,
+  users: UsersIcon,
 };
 
 export default function Sidebar({
@@ -98,7 +109,9 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span className="brand-icon">▥</span>
+        <span className="brand-icon">
+          <BoxesIcon size={20} />
+        </span>
         <span>
           Cloud<span className="brand-accent">Stock</span>
         </span>
@@ -110,6 +123,7 @@ export default function Sidebar({
         {allowedPages.map((pageKey) => {
           const isActive = currentPage === pageKey;
           const showCount = pageKey === 'products' && lowStockCount > 0;
+          const IconComponent = PAGE_ICONS[pageKey];
           return (
             <button
               key={pageKey}
@@ -117,7 +131,9 @@ export default function Sidebar({
               className={`nav-item ${isActive ? 'active' : ''}`.trim()}
               onClick={() => onSelectPage(pageKey)}
             >
-              <span className="nav-icon">{PAGE_ICONS[pageKey]}</span>
+              <span className="nav-icon">
+                <IconComponent size={18} />
+              </span>
               {PAGE_NAMES[pageKey]}
               {showCount && <span className="nav-count">{lowStockCount}</span>}
             </button>

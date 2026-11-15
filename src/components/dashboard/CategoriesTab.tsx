@@ -1,4 +1,5 @@
 import React from 'react';
+import { renderCategoryIcon } from '@/components/ui/Icons';
 import type { ApiCategory, Product } from './types';
 
 export interface CategoriesTabProps {
@@ -30,7 +31,9 @@ export default function CategoriesTab({
           ).length;
           return (
             <div className="category-card" key={item.id}>
-              <div className="category-symbol">▦</div>
+              <div className="category-symbol">
+                {renderCategoryIcon(displayName, { size: 24 })}
+              </div>
               <h3>{displayName}</h3>
               {item.name_en && item.name && item.name_en !== item.name && (
                 <small className="hint" style={{ display: 'block', marginBottom: 4 }}>

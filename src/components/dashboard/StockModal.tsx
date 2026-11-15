@@ -118,8 +118,8 @@ export default function StockModal({
             value={type}
             onChange={(e) => setType(e.target.value as 'IN' | 'OUT')}
           >
-            <option value="IN">Stock In (＋)</option>
-            <option value="OUT">Stock Out (－)</option>
+            <option value="IN">Stock In (Inbound)</option>
+            <option value="OUT">Stock Out (Outbound)</option>
           </select>
         </label>
 

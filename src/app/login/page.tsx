@@ -3,6 +3,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { getIdentity, login, logout } from '@/lib/auth/client';
+import {
+  BoxesIcon,
+  EyeIcon,
+  EyeOffIcon,
+  ArrowRightIcon,
+  CheckCircle2Icon,
+} from '@/components/ui/Icons';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -49,7 +56,10 @@ export default function LoginPage() {
     <main className="auth-screen">
       <section className="auth-card">
         <div className="auth-brand">
-          <span className="auth-brand-icon">▥</span> Cloud<span>Stock</span>
+          <span className="auth-brand-icon">
+            <BoxesIcon size={24} />
+          </span>{' '}
+          Cloud<span>Stock</span>
         </div>
         <div className="auth-eyebrow">INVENTORY MANAGEMENT SYSTEM</div>
         <h1>Sign in</h1>
@@ -81,8 +91,9 @@ export default function LoginPage() {
               type="button"
               onClick={() => setShowPassword((v) => !v)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
             </button>
           </div>
           {error && (
@@ -91,13 +102,24 @@ export default function LoginPage() {
             </div>
           )}
           <button className="auth-submit" type="submit" disabled={busy || checking}>
-            {busy ? 'Signing in…' : checking ? 'Checking session…' : 'Sign in →'}
+            {busy ? (
+              'Signing in…'
+            ) : checking ? (
+              'Checking session…'
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                <span>Sign in</span>
+                <ArrowRightIcon size={16} />
+              </span>
+            )}
           </button>
         </form>
         <div className="auth-note">Need an account? Contact your administrator.</div>
       </section>
       <aside className="auth-aside">
-        <div className="auth-aside-mark">▥</div>
+        <div className="auth-aside-mark">
+          <BoxesIcon size={36} />
+        </div>
         <h2>
           Control your inventory.
           <br />
@@ -105,9 +127,15 @@ export default function LoginPage() {
         </h2>
         <p>Manage products, track movements, and review inventory reports in one place.</p>
         <div className="auth-aside-features">
-          <span>✓ Secure sign-in</span>
-          <span>✓ Three access roles</span>
-          <span>✓ Access control</span>
+          <span>
+            <CheckCircle2Icon size={16} /> Secure sign-in
+          </span>
+          <span>
+            <CheckCircle2Icon size={16} /> Three access roles
+          </span>
+          <span>
+            <CheckCircle2Icon size={16} /> Access control
+          </span>
         </div>
       </aside>
     </main>

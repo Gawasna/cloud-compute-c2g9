@@ -1,4 +1,5 @@
 import React, { type ReactNode } from 'react';
+import { CloseIcon } from './Icons';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -38,7 +39,7 @@ export default function Modal({
             onClick={onClose}
             aria-label="Đóng"
           >
-            ✕
+            <CloseIcon size={18} />
           </button>
         </div>
         <div className="dialog-body">{children}</div>

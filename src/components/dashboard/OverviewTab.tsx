@@ -1,6 +1,14 @@
 import React from 'react';
 import type { Role } from '@/components/layout/Sidebar';
-import { MetricCard, StockBadge, Skeleton } from '@/components/ui';
+import { StockBadge, Skeleton } from '@/components/ui';
+import {
+  PackageIcon,
+  ArchiveIcon,
+  AlertTriangleIcon,
+  BanIcon,
+  ExternalLinkIcon,
+  renderCategoryIcon,
+} from '@/components/ui/Icons';
 import type { Product, ApiDashboard } from './types';
 
 export interface OverviewTabProps {
@@ -28,14 +36,6 @@ export default function OverviewTab({
   const donutInStockPercent = products.length ? (inStockCount / products.length) * 100 : 0;
   const donutLowPercent = products.length ? ((inStockCount + lowCount) / products.length) * 100 : 0;
 
-  const getCategoryIcon = (category: string) => {
-    const c = category.toLowerCase();
-    if (c.includes('electronics') || c.includes('điện tử')) return '⌁';
-    if (c.includes('home') || c.includes('gia dụng')) return '▤';
-    if (c.includes('fashion') || c.includes('thời trang')) return '◈';
-    return '▣';
-  };
-
   return (
     <>
       <div className="metrics">
@@ -48,34 +48,38 @@ export default function OverviewTab({
           </>
         ) : (
           <>
-            <MetricCard
-              title="Total Products"
-              value={products.length.toLocaleString('en-US')}
-              changeText="Managed catalog items"
-              changeType="positive"
-              icon="◈"
-            />
-            <MetricCard
-              title="Total Stock Units"
-              value={totalUnits.toLocaleString('en-US')}
-              changeText="Units currently on hand"
-              changeType="positive"
-              icon="▤"
-            />
-            <MetricCard
-              title="Low Stock Alert"
-              value={lowCount}
-              changeText="Needs replenishment"
-              changeType="negative"
-              icon="⚑"
-            />
-            <MetricCard
-              title="Out of Stock"
-              value={outCount}
-              changeText="Requires immediate action"
-              changeType="negative"
-              icon="⊘"
-            />
+            <div className="metric">
+              <span>Total Products</span>
+              <b>{products.length.toLocaleString('en-US')}</b>
+              <small className="change positive">Managed catalog items</small>
+              <span className="metric-icon">
+                <PackageIcon size={20} />
+              </span>
+            </div>
+            <div className="metric">
+              <span>Total Stock Units</span>
+              <b>{totalUnits.toLocaleString('en-US')}</b>
+              <small className="change positive">Units currently on hand</small>
+              <span className="metric-icon">
+                <ArchiveIcon size={20} />
+              </span>
+            </div>
+            <div className="metric">
+              <span>Low Stock Alert</span>
+              <b>{lowCount}</b>
+              <small className="change negative">Needs replenishment</small>
+              <span className="metric-icon">
+                <AlertTriangleIcon size={20} />
+              </span>
+            </div>
+            <div className="metric">
+              <span>Out of Stock</span>
+              <b>{outCount}</b>
+              <small className="change negative">Requires immediate action</small>
+              <span className="metric-icon">
+                <BanIcon size={20} />
+              </span>
+            </div>
           </>
         )}
       </div>
@@ -191,8 +195,10 @@ export default function OverviewTab({
             type="button"
             className="btn secondary"
             onClick={() => onNavigateTab(role === 'viewer' ? 'reports' : 'products')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            {role === 'viewer' ? 'View Reports' : 'View All'} ↗
+            <span>{role === 'viewer' ? 'View Reports' : 'View All'}</span>
+            <ExternalLinkIcon size={14} />
           </button>
         </div>
 
@@ -213,7 +219,9 @@ export default function OverviewTab({
                 <tr key={p.id}>
                   <td>
                     <div className="item-name">
-                      <span className="item-avatar">{getCategoryIcon(p.category)}</span>
+                      <span className="item-avatar">
+                        {renderCategoryIcon(p.category, { size: 16 })}
+                      </span>
                       <strong>{p.name}</strong>
                     </div>
                   </td>

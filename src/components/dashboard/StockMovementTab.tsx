@@ -1,5 +1,6 @@
 import React from 'react';
 import { StockBadge } from '@/components/ui';
+import { PlusIcon, renderCategoryIcon } from '@/components/ui/Icons';
 import type { Product } from './types';
 
 export interface StockMovementTabProps {
@@ -11,14 +12,6 @@ export default function StockMovementTab({
   products,
   onCreateTicket,
 }: StockMovementTabProps) {
-  const getCategoryIcon = (category: string) => {
-    const c = category.toLowerCase();
-    if (c.includes('electronics') || c.includes('điện tử')) return '⌁';
-    if (c.includes('home') || c.includes('gia dụng')) return '▤';
-    if (c.includes('fashion') || c.includes('thời trang')) return '◈';
-    return '▣';
-  };
-
   return (
     <>
       <div className="inline-heading">
@@ -27,8 +20,10 @@ export default function StockMovementTab({
           type="button"
           className="btn primary"
           onClick={onCreateTicket}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
-          ＋ Create Stock Movement
+          <PlusIcon size={16} />
+          <span>Create Stock Movement</span>
         </button>
       </div>
 
@@ -57,7 +52,9 @@ export default function StockMovementTab({
                 <tr key={p.id}>
                   <td>
                     <div className="item-name">
-                      <span className="item-avatar">{getCategoryIcon(p.category)}</span>
+                      <span className="item-avatar">
+                        {renderCategoryIcon(p.category, { size: 16 })}
+                      </span>
                       <div>
                         <strong>{p.name}</strong>
                         {p.nameOriginal && p.nameOriginal !== p.name && (
