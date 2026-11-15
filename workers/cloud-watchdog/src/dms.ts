@@ -1,3 +1,5 @@
+import type { BugsinkTelemetry } from "./bugsink.ts";
+
 export interface KumaMonitorSummary {
   id: number;
   name?: string;
@@ -47,6 +49,7 @@ export interface DmsCheckinPayload {
   uptime_sec?: number;
   timestamp?: string;
   kuma?: KumaTelemetrySummary;
+  bugsink?: BugsinkTelemetry;
 }
 
 export interface DmsState extends DmsCheckinPayload {
@@ -70,6 +73,8 @@ export interface TelemetryPoint {
   kuma_vercel_ping_ms?: number;
   kuma_uplink_ping_ms?: number;
   kuma_avg_ping_ms?: number;
+  bugsink_events?: number;
+  bugsink_issues?: number;
 }
 
 export const DMS_STATE_KEY = "dms:elitedesk:state";
@@ -134,6 +139,8 @@ export async function recordCheckin(
     kuma_vercel_ping_ms: payload.kuma?.vercel_api_ping_ms,
     kuma_uplink_ping_ms: payload.kuma?.internet_uplink_ping_ms,
     kuma_avg_ping_ms: payload.kuma?.avg_ping_ms,
+    bugsink_events: payload.bugsink?.total_events,
+    bugsink_issues: payload.bugsink?.total_issues,
   });
 
   return { state, wasRecovered };

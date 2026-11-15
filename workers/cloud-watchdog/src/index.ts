@@ -12,6 +12,9 @@ import {
   evaluateDmsTimeout,
   type DmsCheckinPayload,
 } from "./dms.ts";
+import { handleSentryWebhook } from "./sentry.ts";
+import { handleSupabaseWebhook, evaluateSupabaseLatency } from "./supabase.ts";
+import { evaluateBugsinkSpike, formatBugsinkSpikeAlert } from "./bugsink.ts";
 
 export interface Env {
   DEFAULT_HEALTH_ENDPOINT: string;
@@ -22,6 +25,9 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET?: string;
   DMS_SECRET_TOKEN?: string;
   DMS_GRACE_PERIOD_SEC?: string;
+  SENTRY_WEBHOOK_SECRET?: string;
+  SUPABASE_WEBHOOK_SECRET?: string;
+  BUGSINK_SPIKE_THRESHOLD?: string;
   WATCHDOG_KV?: KVNamespace;
 }
 
@@ -149,6 +155,31 @@ export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
         lastSeenIso: new Date(dmsCheck.state.last_seen_epoch).toISOString(),
       });
     }
+
+    // 5. Evaluate Supabase Latency Degradation & Recovery
+    if (result.dbLatencyMs !== undefined) {
+      const latencyCheck = await evaluateSupabaseLatency(
+        result.dbLatencyMs,
+        result.dbStatus,
+        env.WATCHDOG_KV
+      );
+      if (latencyCheck.shouldAlert && latencyCheck.alertPayload && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        const isRecovery = latencyCheck.isRecovery;
+        const msg = isRecovery
+          ? `<b>[SUPABASE RECOVERED]</b> Độ trễ Database đã phục hồi về mức danh định!\n• Độ trễ: <code>${result.dbLatencyMs}ms</code>\n• Trạng thái: <code>${result.dbStatus || "connected"}</code>`
+          : `<b>[WARNING ALERT] Phát Hiện Suy Giảm Hiệu Năng Supabase DB!</b>\n• Độ trễ hiện tại: <code>${result.dbLatencyMs}ms</code> (vượt ngưỡng 2500ms)\n• Trạng thái: <code>${result.dbStatus || "disconnected"}</code>\n• Số chu kỳ suy giảm: <code>${latencyCheck.state.consecutive_degraded}</code>`;
+
+        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: env.TELEGRAM_CHAT_ID,
+            text: msg,
+            parse_mode: "HTML",
+          }),
+        }).catch((err) => console.error("[Watchdog] Failed to dispatch Supabase latency alert:", err));
+      }
+    }
   }
 
   return result;
@@ -215,6 +246,31 @@ const worker = {
           }
         }
 
+        // Evaluate BugSink Anomaly Spike
+        if (payload.bugsink && env.WATCHDOG_KV) {
+          const spikeThreshold = parseInt(env.BUGSINK_SPIKE_THRESHOLD || "15", 10);
+          const spikeCheck = await evaluateBugsinkSpike(payload.bugsink, env.WATCHDOG_KV, spikeThreshold);
+          if (spikeCheck.isSpike && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+            const alertText = formatBugsinkSpikeAlert(payload.bugsink, spikeCheck.delta);
+            const sendAlert = fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: env.TELEGRAM_CHAT_ID,
+                text: alertText,
+                parse_mode: "HTML",
+                disable_web_page_preview: true,
+              }),
+            }).catch((err) => console.error("[DMS] Failed to dispatch BugSink spike alert:", err));
+
+            if (ctx && typeof ctx.waitUntil === "function") {
+              ctx.waitUntil(sendAlert);
+            } else {
+              await sendAlert;
+            }
+          }
+        }
+
         return new Response(
           JSON.stringify({
             ok: true,
@@ -266,7 +322,17 @@ const worker = {
       }
     }
 
-    // 3. Manual on-demand probe trigger
+    // 3. Sentry Webhook Ingestion
+    if (url.pathname === "/api/sentry-webhook" && request.method === "POST") {
+      return handleSentryWebhook(request, env);
+    }
+
+    // 4. Supabase Database Webhook Ingestion
+    if ((url.pathname === "/api/supabase-webhook" || url.pathname === "/api/supabase/webhook") && request.method === "POST") {
+      return handleSupabaseWebhook(request, env);
+    }
+
+    // 5. Manual on-demand probe trigger
     if (url.pathname === "/trigger") {
       const result = await handleWatchdogPulse(env);
       return new Response(JSON.stringify(result, null, 2), {
@@ -275,14 +341,20 @@ const worker = {
       });
     }
 
-    // 4. Worker Health / Info Snapshot
+    // 6. Worker Health / Info Snapshot
     return new Response(
       JSON.stringify(
         {
           service: "Cloud Watchdog Edge Worker",
           status: "online",
           schedule: "*/10 * * * *",
-          endpoints: ["/trigger", "/telegram-webhook", "/api/dms/checkin"],
+          endpoints: [
+            "/trigger",
+            "/telegram-webhook",
+            "/api/dms/checkin",
+            "/api/sentry-webhook",
+            "/api/supabase-webhook",
+          ],
           target: env.HEALTH_ENDPOINT || env.DEFAULT_HEALTH_ENDPOINT,
           kv_bound: !!env.WATCHDOG_KV,
         },

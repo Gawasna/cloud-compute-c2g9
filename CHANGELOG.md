@@ -8,6 +8,7 @@ Format follows [Conventional Commits](https://www.conventionalcommits.org/) and 
 ## [Unreleased]
 
 ### Operations / Watchdog
+- Consolidated First Stream telemetry into Telegram: Sentry P0 issue alert webhook (`/api/sentry-webhook`), BugSink SQLite anomaly spike detection (`/srv/.../bugsink/data/db.sqlite3` on HP node), and Supabase PostgreSQL database webhook (`/api/supabase-webhook`) with multi-cycle latency degradation guard (TASK-20261115-0011, TASK-20261115-0012, TASK-20261115-0013 / Issue #21)
 - Decouple Telegram `/chart` command into distinct domain visualizations: `/chart` (or `/chart cloud`) for Cloud Edge vs Database latency (ms), `/chart node` (or `/chart hp`) for HP EliteDesk CPU Load vs RAM MB/%, and `/chart kuma` for 8-hour Uptime Kuma monitor series and failures (TASK-20261115-0006 / Issue #21)
 - Full 8-hour time series extraction (~20 downsampled points across 4 monitors) and failed events telemetry reporting for `/chart kuma` (TASK-20261115-0005 / Issue #21)
 - Uptime Kuma rich telemetry integration (monitor counts, 24h uptime, ping latency for Supabase DB/Vercel API/Internet Uplink) into Dead Man's Switch heartbeat and `/chart kuma` Telegram command (TASK-20261115-0004 / Issue #21)

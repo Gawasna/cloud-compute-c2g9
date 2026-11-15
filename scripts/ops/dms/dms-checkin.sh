@@ -138,6 +138,62 @@ if [[ "${KUMA_STATUS}" == "down" ]]; then
     fi
 fi
 
+# 4.1 Harvest BugSink telemetry (SQLite database on on-premise node)
+BUGSINK_TELEMETRY='{"status":"unavailable"}'
+BUGSINK_DB_PATH="/srv/elitedesk_team_ops/bugsink/data/db.sqlite3"
+
+if command -v python3 >/dev/null 2>&1; then
+    PY_BUGSINK=$(python3 - << 'EOF' 2>/dev/null || true
+import sqlite3
+import json
+import os
+
+db_path = "/srv/elitedesk_team_ops/bugsink/data/db.sqlite3"
+result = {"status": "unavailable"}
+
+if os.path.isfile(db_path):
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        cur = conn.cursor()
+
+        cur.execute("SELECT count(*) FROM issues_issue")
+        total_issues = cur.fetchone()[0]
+
+        cur.execute("SELECT count(*) FROM events_event")
+        total_events = cur.fetchone()[0]
+
+        cur.execute("PRAGMA table_info(issues_issue)")
+        cols = [r[1] for r in cur.fetchall()]
+        type_col = "calculated_type" if "calculated_type" in cols else ("type" if "type" in cols else "id")
+        val_col = "calculated_value" if "calculated_value" in cols else ("value" if "value" in cols else "id")
+
+        cur.execute(f"SELECT id, {type_col}, {val_col} FROM issues_issue ORDER BY id DESC LIMIT 3")
+        recent = []
+        for r in cur.fetchall():
+            recent.append({
+                "id": r[0],
+                "type": str(r[1] or "UnknownError"),
+                "value": str(r[2] or "")[:120]
+            })
+
+        result = {
+            "status": "ok",
+            "total_issues": total_issues,
+            "total_events": total_events,
+            "recent_issues": recent
+        }
+        conn.close()
+    except Exception:
+        pass
+
+print(json.dumps(result))
+EOF
+)
+    if [[ -n "${PY_BUGSINK}" ]]; then
+        BUGSINK_TELEMETRY="${PY_BUGSINK}"
+    fi
+fi
+
 ISO_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # 5. Assemble JSON payload
@@ -150,7 +206,8 @@ PAYLOAD=$(cat <<EOF
   "memory_total_mb": ${MEM_TOTAL:-0},
   "uptime_sec": ${UPTIME_SEC:-0},
   "timestamp": "${ISO_TIMESTAMP}",
-  "kuma": ${KUMA_TELEMETRY}
+  "kuma": ${KUMA_TELEMETRY},
+  "bugsink": ${BUGSINK_TELEMETRY}
 }
 EOF
 )

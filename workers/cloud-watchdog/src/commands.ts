@@ -1,5 +1,6 @@
 import { executeProbe, type Env } from "./index.ts";
 import { getDmsState, getTelemetryRingBuffer } from "./dms.ts";
+import { formatBugsinkSummary } from "./bugsink.ts";
 import {
   summarizeTelemetry,
   generateCloudChartUrl,
@@ -145,6 +146,7 @@ export async function handleTelegramCommand(
           `• <b>Node:</b> <code>${escapeHtml(dms.node)}</code> (${statusBadge})`,
           `• <b>Check-in lần cuối:</b> <code>${diffMin} phút trước (${diffSec}s)</code>`,
           kumaDetail,
+          formatBugsinkSummary(dms.bugsink),
           `• <b>Load Average:</b> <code>${dms.load_avg ?? "N/A"}</code> | <b>RAM:</b> <code>${dms.memory_used_mb ?? "N/A"}MB</code>`,
         ].join("\n");
       }
