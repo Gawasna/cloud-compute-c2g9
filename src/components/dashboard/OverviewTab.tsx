@@ -1,6 +1,9 @@
-import React from 'react';
+'use client';
+
+import React, { useMemo } from 'react';
 import type { Role } from '@/components/layout/Sidebar';
 import { MetricCard, StockBadge, Skeleton } from '@/components/ui';
+import { MovementTrendChart, StockDistributionChart } from '@/components/charts';
 import type { Product, ApiDashboard } from './types';
 
 export interface OverviewTabProps {
@@ -25,8 +28,30 @@ export default function OverviewTab({
 
   const recentProducts = products.slice(0, 6);
 
-  const donutInStockPercent = products.length ? (inStockCount / products.length) * 100 : 0;
-  const donutLowPercent = products.length ? ((inStockCount + lowCount) / products.length) * 100 : 0;
+  const movementTrendPoints = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = new Date();
+      day.setDate(day.getDate() - 6 + i);
+      const sameDay = (v: string) =>
+        new Date(v).toDateString() === day.toDateString();
+      const daily = (dashboardStats?.history || []).filter((t) =>
+        sameDay(t.day)
+      );
+      const ins = daily
+        .filter((t) => t.type === 'IN')
+        .reduce((s, t) => s + Number(t.quantity), 0);
+      const outs = daily
+        .filter((t) => t.type === 'OUT')
+        .reduce((s, t) => s + Number(t.quantity), 0);
+
+      return {
+        period: day.toISOString(),
+        label: day.toLocaleDateString('en-US', { weekday: 'short' }),
+        inbound: ins,
+        outbound: outs,
+      };
+    });
+  }, [dashboardStats?.history]);
 
   const getCategoryIcon = (category: string) => {
     const c = category.toLowerCase();
@@ -101,47 +126,17 @@ export default function OverviewTab({
             </span>
           </div>
 
-          <div className="chart">
-            {Array.from({ length: 7 }, (_, i) => {
-              const day = new Date();
-              day.setDate(day.getDate() - 6 + i);
-              const sameDay = (v: string) =>
-                new Date(v).toDateString() === day.toDateString();
-              const daily = (dashboardStats?.history || []).filter((t) =>
-                sameDay(t.day)
-              );
-              const ins = daily
-                .filter((t) => t.type === 'IN')
-                .reduce((s, t) => s + Number(t.quantity), 0);
-              const outs = daily
-                .filter((t) => t.type === 'OUT')
-                .reduce((s, t) => s + Number(t.quantity), 0);
-              const max = Math.max(
-                25,
-                ...(dashboardStats?.history || []).map((t) => Number(t.quantity))
-              );
-
-              return (
-                <div className="chart-col" key={day.toISOString()}>
-                  <div className="bars">
-                    <span
-                      className="bar bar-in"
-                      title={`Inbound ${ins}`}
-                      style={{ height: `${Math.max(4, (ins / max) * 100)}%` }}
-                    />
-                    <span
-                      className="bar bar-out"
-                      title={`Outbound ${outs}`}
-                      style={{ height: `${Math.max(4, (outs / max) * 100)}%` }}
-                    />
-                  </div>
-                  <small>
-                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
-                  </small>
-                </div>
-              );
-            })}
-          </div>
+          {loading ? (
+            <div className="chart-placeholder" style={{ height: '220px' }}>
+              Loading movement trends...
+            </div>
+          ) : (
+            <MovementTrendChart
+              data={movementTrendPoints}
+              height={220}
+              emptyText="No transaction history in the past 7 days"
+            />
+          )}
         </section>
 
         <section className="panel alerts-panel">
@@ -152,32 +147,20 @@ export default function OverviewTab({
             </div>
           </div>
 
-          <div
-            className="donut"
-            style={{
-              background: `conic-gradient(#65bf92 0 ${donutInStockPercent}%, #ff9b93 ${donutInStockPercent}% ${donutLowPercent}%, #a9a9bd ${donutLowPercent}% 100%)`,
-            }}
-          >
-            <div>
-              <b>{products.length}</b>
-              <span>items</span>
+          {loading ? (
+            <div className="chart-placeholder" style={{ height: '230px' }}>
+              Loading stock distribution...
             </div>
-          </div>
-
-          <div className="donut-legend">
-            <div>
-              <i className="dot green" />
-              In Stock <strong>{inStockCount}</strong>
-            </div>
-            <div>
-              <i className="dot coral" />
-              Low Stock <strong>{lowCount}</strong>
-            </div>
-            <div>
-              <i className="dot gray" />
-              Out of Stock <strong>{outCount}</strong>
-            </div>
-          </div>
+          ) : (
+            <StockDistributionChart
+              inStockCount={inStockCount}
+              lowStockCount={lowCount}
+              outOfStockCount={outCount}
+              totalProducts={products.length}
+              height={180}
+              showLegend={true}
+            />
+          )}
         </section>
       </div>
 
