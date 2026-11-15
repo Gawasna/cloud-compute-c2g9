@@ -1,6 +1,6 @@
 import { executeProbe, type Env } from "./index.ts";
 import { getDmsState, getTelemetryRingBuffer } from "./dms.ts";
-import { summarizeTelemetry, generateQuickChartUrl } from "./chart.ts";
+import { summarizeTelemetry, generateQuickChartUrl, generateKumaChartUrl } from "./chart.ts";
 import { sendTelegramPhoto, escapeHtml } from "./notifier.ts";
 
 export interface TelegramChat {
@@ -117,10 +117,29 @@ export async function handleTelegramCommand(
         const isUp = diffSec <= graceSec;
         const statusBadge = isUp ? "ONLINE (Đang kết nối)" : "OFFLINE / MẤT TÍN HIỆU";
 
+        let kumaDetail = `• <b>Uptime Kuma:</b> <code>${escapeHtml(dms.uptime_kuma || "up")}</code>`;
+        if (dms.kuma) {
+          const k = dms.kuma;
+          const uptimeStr = k.uptime_24h_percent !== undefined ? ` (${k.uptime_24h_percent}% 24h)` : "";
+          const lines = [
+            `• <b>Uptime Kuma:</b> <code>${k.monitors_up}/${k.monitors_total} UP</code>${uptimeStr}`,
+          ];
+          if (k.supabase_db_ping_ms !== undefined) {
+            lines.push(`  - Supabase DB: <code>${k.supabase_db_ping_ms}ms</code>`);
+          }
+          if (k.vercel_api_ping_ms !== undefined) {
+            lines.push(`  - Vercel Health: <code>${k.vercel_api_ping_ms}ms</code>`);
+          }
+          if (k.internet_uplink_ping_ms !== undefined) {
+            lines.push(`  - Uplink (1.1.1.1): <code>${k.internet_uplink_ping_ms}ms</code>`);
+          }
+          kumaDetail = lines.join("\n");
+        }
+
         onPremText = [
           `• <b>Node:</b> <code>${escapeHtml(dms.node)}</code> (${statusBadge})`,
           `• <b>Check-in lần cuối:</b> <code>${diffMin} phút trước (${diffSec}s)</code>`,
-          `• <b>Uptime Kuma:</b> <code>${escapeHtml(dms.uptime_kuma || "up")}</code>`,
+          kumaDetail,
           `• <b>Load Average:</b> <code>${dms.load_avg ?? "N/A"}</code> | <b>RAM:</b> <code>${dms.memory_used_mb ?? "N/A"}MB</code>`,
         ].join("\n");
       }
@@ -154,8 +173,8 @@ export async function handleTelegramCommand(
     ].join("\n");
 
     await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, reply);
-  } else if (command === "/chart") {
-    console.log(`[Commands] Executing /chart for chat ${chatId}`);
+  } else if (command === "/chart" || command === "/chart_kuma") {
+    console.log(`[Commands] Executing ${command} for chat ${chatId}`);
 
     if (!env.WATCHDOG_KV) {
       await sendTelegramReply(
@@ -176,14 +195,28 @@ export async function handleTelegramCommand(
       return;
     }
 
-    const chartUrl = generateQuickChartUrl(buffer);
-    const summary = summarizeTelemetry(buffer);
-    const caption = [
-      `<b>[BIỂU ĐỒ ĐỘ TRỄ & TẢI HỆ THỐNG]</b>`,
-      `Dữ liệu ${buffer.length} chu kỳ gần nhất (chu kỳ 10m).`,
-      `• Cloud Latency TB: <code>${summary.avgCloudLatency}ms</code> (Max: ${summary.maxCloudLatency}ms)`,
-      `• On-Prem Load TB: <code>${summary.avgHpLoad}</code>`,
-    ].join("\n");
+    const isKumaMode = parts[1]?.toLowerCase() === "kuma" || command === "/chart_kuma";
+    let chartUrl: string;
+    let caption: string;
+
+    if (isKumaMode) {
+      chartUrl = generateKumaChartUrl(buffer);
+      caption = [
+        `<b>[BIỂU ĐỒ ĐỘ TRỄ UPTIME KUMA (ON-PREMISE)]</b>`,
+        `Dữ liệu ${buffer.length} chu kỳ gần nhất từ HP node (chu kỳ 10m):`,
+        `• Supabase DB vs Vercel API vs Internet Uplink.`,
+      ].join("\n");
+    } else {
+      chartUrl = generateQuickChartUrl(buffer);
+      const summary = summarizeTelemetry(buffer);
+      caption = [
+        `<b>[BIỂU ĐỒ ĐỘ TRỄ & TẢI HỆ THỐNG]</b>`,
+        `Dữ liệu ${buffer.length} chu kỳ gần nhất (chu kỳ 10m).`,
+        `• Cloud Latency TB: <code>${summary.avgCloudLatency}ms</code> (Max: ${summary.maxCloudLatency}ms)`,
+        `• On-Prem Load TB: <code>${summary.avgHpLoad}</code>`,
+        `<i>(Mẹo: Gõ <code>/chart kuma</code> để xem biểu đồ chi tiết các monitor Kuma)</i>`,
+      ].join("\n");
+    }
 
     const sent = await sendTelegramPhoto(env.TELEGRAM_BOT_TOKEN, chatId, chartUrl, caption);
     if (!sent) {
@@ -225,6 +258,7 @@ export async function handleTelegramCommand(
       ``,
       `• <code>/status</code> - Báo cáo tổng thể hợp nhất (Cloud Vercel/Supabase + On-Premise DMS).`,
       `• <code>/chart</code> - Xuất ảnh biểu đồ trực quan hóa độ trễ và tải CPU (QuickChart).`,
+      `• <code>/chart kuma</code> - Xuất ảnh biểu đồ độ trễ các monitor Kuma (Supabase/Vercel/Uplink).`,
       `• <code>/ping</code> - Đo độ trễ từ Cloudflare Edge đến Vercel API.`,
       `• <code>/help</code> - Hiển thị danh mục lệnh hỗ trợ.`,
       ``,

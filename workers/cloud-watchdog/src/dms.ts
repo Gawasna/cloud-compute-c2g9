@@ -80,7 +80,13 @@ export async function recordCheckin(
     hp_ok: true,
     hp_load: payload.load_avg,
     hp_mem_mb: payload.memory_used_mb,
-    hp_kuma_status: payload.uptime_kuma,
+    hp_kuma_status: payload.kuma?.status ?? payload.uptime_kuma,
+    kuma_monitors_up: payload.kuma?.monitors_up,
+    kuma_monitors_total: payload.kuma?.monitors_total,
+    kuma_supabase_ping_ms: payload.kuma?.supabase_db_ping_ms,
+    kuma_vercel_ping_ms: payload.kuma?.vercel_api_ping_ms,
+    kuma_uplink_ping_ms: payload.kuma?.internet_uplink_ping_ms,
+    kuma_avg_ping_ms: payload.kuma?.avg_ping_ms,
   });
 
   return { state, wasRecovered };

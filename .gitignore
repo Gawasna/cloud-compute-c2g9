@@ -82,6 +82,10 @@ workers/**/.dev.vars
 scripts/ops/**/data/
 scripts/ops/**/.env
 
+# Cloudflare Workers
+.wrangler/
+workers/**/.wrangler/
+
 # Binary presentations
 *.pptx
 

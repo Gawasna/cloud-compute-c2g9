@@ -192,6 +192,72 @@ describe("Telegram Slash Commands Handler Tests", () => {
     }
   });
 
+  it("handles /chart and /chart kuma commands delivering quickchart images", async () => {
+    let sentPhotoUrl = "";
+    let sentCaption = "";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      const urlStr = String(url);
+      if (urlStr.includes("sendPhoto")) {
+        const body = JSON.parse(String(options?.body || "{}"));
+        sentPhotoUrl = body.photo;
+        sentCaption = body.caption;
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 104 } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    const mockKv = {
+      async get(key) {
+        if (key === "telemetry:ring_buffer") {
+          return [
+            { ts: 1731690000, cloud_duration_ms: 250, hp_load: 0.15, kuma_supabase_ping_ms: 450, kuma_vercel_ping_ms: 1200 },
+            { ts: 1731690600, cloud_duration_ms: 320, hp_load: 0.18, kuma_supabase_ping_ms: 460, kuma_vercel_ping_ms: 1100 },
+          ];
+        }
+        return null;
+      },
+    };
+
+    const envWithKv = { ...mockEnv, WATCHDOG_KV: mockKv };
+
+    try {
+      // 1. Test default /chart
+      await handleTelegramCommand(
+        {
+          update_id: 7,
+          message: {
+            message_id: 16,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/chart",
+            date: 1731670000,
+          },
+        },
+        envWithKv
+      );
+      assert.match(sentCaption, /BIỂU ĐỒ ĐỘ TRỄ & TẢI HỆ THỐNG/);
+      assert.match(sentPhotoUrl, /Cloud%20Latency/);
+
+      // 2. Test /chart kuma
+      await handleTelegramCommand(
+        {
+          update_id: 8,
+          message: {
+            message_id: 17,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/chart kuma",
+            date: 1731670000,
+          },
+        },
+        envWithKv
+      );
+      assert.match(sentCaption, /BIỂU ĐỒ ĐỘ TRỄ UPTIME KUMA/);
+      assert.match(sentPhotoUrl, /Uptime%20Kuma/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("validates secret token on POST /telegram-webhook endpoint", async () => {
     // 1. Invalid secret token returns 403
     const badReq = new Request("http://localhost/telegram-webhook", {
