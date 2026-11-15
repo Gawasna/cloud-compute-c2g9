@@ -9,13 +9,13 @@
 
 set -euo pipefail
 
-# 1. Source environment files if present
-if [[ -f "/home/ikari/ops/.env" ]]; then
+# 1. Source environment files if readable
+if [[ -r "/home/ikari/ops/.env" ]]; then
     # shellcheck disable=SC1091
     source "/home/ikari/ops/.env"
 fi
 
-if [[ -f "/home/ikari/.env.dms" ]]; then
+if [[ -r "/home/ikari/.env.dms" ]]; then
     # shellcheck disable=SC1091
     source "/home/ikari/.env.dms"
 fi

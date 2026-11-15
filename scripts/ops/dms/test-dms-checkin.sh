@@ -9,8 +9,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Try reading from environment files
-if [[ -f "/home/ikari/.env.dms" ]]; then
+# Try reading from environment files if readable
+if [[ -r "/home/ikari/.env.dms" ]]; then
     # shellcheck disable=SC1091
     source "/home/ikari/.env.dms" 2>/dev/null || true
 fi
