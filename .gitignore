@@ -68,6 +68,12 @@ specs/
 !CHANGELOG.md
 !README.md
 
+# Local Operations Runbooks & Worker Local Secrets (non-committed)
+*.local.md
+workers/**/RUNBOOK*.md
+workers/**/.dev.vars
+
+
 # Syncthing
 .stversions/
 .stignore

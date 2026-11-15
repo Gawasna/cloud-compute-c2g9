@@ -315,26 +315,34 @@ Bugsink -[#7C3AED]-> BugsinkStore
 ' ==============================================================================
 ' SECTION 12: OPERATIONS, DUAL WATCHDOG & HEARTBEAT (VẬN HÀNH & CHỐNG TẠM DỪNG DATABASE)
 ' Nghiệp vụ: Duy trì tính sẵn sàng liên tục và kiểm soát chi phí Free Tier:
-' - GitHub Actions Cron: Watchdog từ đám mây (10–15 phút/lần).
+' - Cloudflare Worker Cron: Watchdog & Keep-Alive chính thức từ đám mây (10 phút/lần, 0$ cost, Telegram alerts & slash commands).
+' - Dead Man's Switch (DMS): HP Node gửi nhịp tim outbound (10m) lên Cloudflare Worker KV, phát hiện sập nguồn/rớt mạng.
 ' - EliteDesk Systemd Timer: Watchdog từ on-premise HP Node (1 phút/lần bởi service account ikari).
+' - GitHub Actions Cron: Tertiary fallback định kỳ (6 giờ/lần).
 ' - Health Endpoint (/api/health): Thực hiện lightweight PostgREST query giữ Supabase DB không bị pause sau 7 ngày.
 ' - Uptime Kuma v2: Hệ thống đo đạc Uptime & Latency độc lập trên Rootless Docker.
 ' - Usage Dashboards & Alerts: Cảnh báo sớm vượt ngưỡng tài nguyên Vercel & Supabase.
 ' ==============================================================================
 package "Operations · heartbeat & cost" <<external>> {
-  component "GitHub Actions\nCron (Cloud Heartbeat)" as GHAction <<external>>
+  component "Cloudflare Worker\n(Cloud Watchdog 10m · DMS)" as CFWorker <<external>>
+  component "GitHub Actions\nCron (6h Fallback)" as GHAction <<external>>
   component "EliteDesk Cron\n(systemd · 1m ping)" as EliteCron <<external>>
   component "Health Endpoint\n(/api/health · DB ping)" as HealthEP <<external>>
   component "Uptime Kuma v2\n(Ops Watchdog Node)" as UptimeStore <<external>>
+  component "Cloudflare KV\n(WATCHDOG_KV · Ring Buffer)" as CFKV <<external>>
   component "Vercel Usage\nDashboard" as VercelUsage <<cost>>
   component "Supabase Usage\nDashboard" as SupaUsage <<cost>>
   component "Usage Alert" as UsageAlert <<cost>>
 }
 
 Owner --> EliteCron : one-time setup
-GHAction --> HealthEP : every 10–15 min
+EliteCron --> CFWorker : DMS check-in (every 10 min)
+CFWorker --> CFKV : telemetry ring buffer & DMS state
+CFWorker --> HealthEP : every 10 min
+GHAction --> HealthEP : every 6 hours
 EliteCron --> HealthEP : every 1 min
 HealthEP --> Supavisor : DB ping
+CFWorker --> UsageAlert : Telegram alert on degradation / DMS silent
 GHAction --> UptimeStore : result
 EliteCron --> UptimeStore : result
 VercelBuild --> VercelUsage
