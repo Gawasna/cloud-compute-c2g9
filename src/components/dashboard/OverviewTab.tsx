@@ -141,7 +141,7 @@ export default function OverviewTab({
             <MovementTrendChart
               data={movementTrendPoints}
               height={220}
-              emptyText={t.reports?.empty || 'No transaction history in the past 7 days'}
+              emptyText={t.overview.noProducts || 'No transaction history in the past 7 days'}
             />
           )}
         </section>
