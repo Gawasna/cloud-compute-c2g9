@@ -67,25 +67,29 @@ export function summarizeTelemetry(buffer: TelemetryPoint[]): TelemetrySummary {
 }
 
 /**
- * Constructs a QuickChart.io image URL rendering a dual-axis line chart
- * for Cloud Response Latency (ms) and On-Premise Load Avg.
+ * Constructs a QuickChart.io image URL rendering Cloud Performance:
+ * Total API Latency (ms) vs Supabase DB Query Latency (ms).
  */
-export function generateQuickChartUrl(buffer: TelemetryPoint[]): string {
+export function generateCloudChartUrl(buffer: TelemetryPoint[]): string {
   if (!buffer || buffer.length === 0) {
     return "";
   }
 
-  // Sample or take last 24 points to keep URL concise
-  const points = buffer.slice(-24);
-  const labels = points.map((p) => {
+  // Filter points that contain cloud telemetry
+  const cloudPoints = buffer.filter((p) => p.cloud_duration_ms !== undefined).slice(-24);
+  if (cloudPoints.length === 0) {
+    return "";
+  }
+
+  const labels = cloudPoints.map((p) => {
     const d = new Date(p.ts * 1000);
     const hh = String(d.getUTCHours() + 7).padStart(2, "0"); // GMT+7
     const mm = String(d.getUTCMinutes()).padStart(2, "0");
     return `${hh}:${mm}`;
   });
 
-  const cloudData = points.map((p) => p.cloud_duration_ms ?? null);
-  const hpData = points.map((p) => p.hp_load ?? null);
+  const totalLatency = cloudPoints.map((p) => p.cloud_duration_ms ?? null);
+  const dbLatency = cloudPoints.map((p) => p.db_latency_ms ?? null);
 
   const chartConfig = {
     type: "line",
@@ -93,29 +97,107 @@ export function generateQuickChartUrl(buffer: TelemetryPoint[]): string {
       labels,
       datasets: [
         {
-          label: "Cloud Latency (ms)",
-          data: cloudData,
+          label: "Total Edge Latency (ms)",
+          data: totalLatency,
           borderColor: "#38bdf8",
-          backgroundColor: "rgba(56, 189, 248, 0.1)",
-          yAxisID: "y",
+          backgroundColor: "rgba(56, 189, 248, 0.08)",
           fill: true,
-          tension: 0.3,
+          tension: 0.25,
+          pointRadius: 3,
         },
         {
-          label: "HP Load Avg",
-          data: hpData,
-          borderColor: "#4ade80",
-          backgroundColor: "transparent",
-          yAxisID: "y1",
-          borderDash: [5, 5],
-          tension: 0.3,
+          label: "Supabase DB Query (ms)",
+          data: dbLatency,
+          borderColor: "#f97316",
+          backgroundColor: "rgba(249, 115, 22, 0.08)",
+          fill: true,
+          tension: 0.25,
+          pointRadius: 3,
         },
       ],
     },
     options: {
       title: {
         display: true,
-        text: "CloudStock Infrastructure Telemetry (GMT+7)",
+        text: "Cloud Latency Breakdown: Vercel Edge vs Supabase DB (GMT+7)",
+        fontColor: "#ffffff",
+      },
+      legend: {
+        labels: { fontColor: "#cbd5e1" },
+      },
+      scales: {
+        xAxes: [{ ticks: { fontColor: "#94a3b8" }, gridLines: { color: "rgba(255,255,255,0.05)" } }],
+        yAxes: [
+          {
+            scaleLabel: { display: true, labelString: "Latency (ms)", fontColor: "#cbd5e1" },
+            ticks: { fontColor: "#cbd5e1", beginAtZero: true },
+            gridLines: { color: "rgba(255,255,255,0.05)" },
+          },
+        ],
+      },
+    },
+  };
+
+  const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
+  return `https://quickchart.io/chart?bkg=%230f172a&w=650&h=320&c=${encodedConfig}`;
+}
+
+/**
+ * Constructs a QuickChart.io image URL rendering On-Premise Node Hardware:
+ * CPU Load Average vs RAM Usage (MB).
+ */
+export function generateNodeChartUrl(buffer: TelemetryPoint[], totalRamMb = 7712): string {
+  if (!buffer || buffer.length === 0) {
+    return "";
+  }
+
+  // Filter points that contain on-premise hardware telemetry
+  const hpPoints = buffer.filter((p) => p.hp_load !== undefined || p.hp_mem_mb !== undefined).slice(-24);
+  if (hpPoints.length === 0) {
+    return "";
+  }
+
+  const labels = hpPoints.map((p) => {
+    const d = new Date(p.ts * 1000);
+    const hh = String(d.getUTCHours() + 7).padStart(2, "0"); // GMT+7
+    const mm = String(d.getUTCMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  });
+
+  const loadData = hpPoints.map((p) => p.hp_load ?? null);
+  const memData = hpPoints.map((p) => p.hp_mem_mb ?? null);
+
+  const chartConfig = {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "CPU Load Avg",
+          data: loadData,
+          borderColor: "#4ade80",
+          backgroundColor: "rgba(74, 222, 128, 0.08)",
+          yAxisID: "y",
+          fill: true,
+          tension: 0.25,
+          pointRadius: 3,
+        },
+        {
+          label: "RAM Used (MB)",
+          data: memData,
+          borderColor: "#a855f7",
+          backgroundColor: "transparent",
+          yAxisID: "y1",
+          borderDash: [4, 4],
+          tension: 0.25,
+          pointRadius: 3,
+        },
+      ],
+    },
+    options: {
+      title: {
+        display: true,
+        text: `HP EliteDesk Node Hardware Resources (Total RAM: ${totalRamMb}MB)`,
         fontColor: "#ffffff",
       },
       legend: {
@@ -127,15 +209,15 @@ export function generateQuickChartUrl(buffer: TelemetryPoint[]): string {
           {
             id: "y",
             position: "left",
-            scaleLabel: { display: true, labelString: "Latency (ms)", fontColor: "#38bdf8" },
-            ticks: { fontColor: "#38bdf8" },
+            scaleLabel: { display: true, labelString: "CPU Load Avg", fontColor: "#4ade80" },
+            ticks: { fontColor: "#4ade80", beginAtZero: true },
             gridLines: { color: "rgba(255,255,255,0.05)" },
           },
           {
             id: "y1",
             position: "right",
-            scaleLabel: { display: true, labelString: "Load Avg", fontColor: "#4ade80" },
-            ticks: { fontColor: "#4ade80" },
+            scaleLabel: { display: true, labelString: "RAM (MB)", fontColor: "#a855f7" },
+            ticks: { fontColor: "#a855f7", beginAtZero: true, suggestedMax: totalRamMb },
             gridLines: { display: false },
           },
         ],
@@ -144,7 +226,14 @@ export function generateQuickChartUrl(buffer: TelemetryPoint[]): string {
   };
 
   const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
-  return `https://quickchart.io/chart?bkg=%230f172a&w=600&h=300&c=${encodedConfig}`;
+  return `https://quickchart.io/chart?bkg=%230f172a&w=650&h=320&c=${encodedConfig}`;
+}
+
+/**
+ * Backward compatibility alias for generateCloudChartUrl.
+ */
+export function generateQuickChartUrl(buffer: TelemetryPoint[]): string {
+  return generateCloudChartUrl(buffer);
 }
 
 /**

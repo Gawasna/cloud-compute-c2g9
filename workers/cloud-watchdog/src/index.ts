@@ -29,6 +29,7 @@ export interface ProbeResult {
   ok: boolean;
   statusCode?: number;
   dbStatus?: string;
+  dbLatencyMs?: number;
   overallStatus?: string;
   durationMs: number;
   error?: string;
@@ -59,7 +60,9 @@ export async function executeProbe(targetUrl: string, timeoutMs = 8000): Promise
       // Body is not JSON
     }
 
-    const dbStatus = (parsedBody.database as { status?: string } | undefined)?.status;
+    const dbObj = parsedBody.database as { status?: string; latency_ms?: number } | undefined;
+    const dbStatus = dbObj?.status;
+    const dbLatencyMs = typeof dbObj?.latency_ms === "number" ? dbObj.latency_ms : undefined;
     const overallStatus = parsedBody.status as string | undefined;
 
     const isHealthy = res.status === 200 && dbStatus === "connected";
@@ -68,6 +71,7 @@ export async function executeProbe(targetUrl: string, timeoutMs = 8000): Promise
       ok: isHealthy,
       statusCode: res.status,
       dbStatus,
+      dbLatencyMs,
       overallStatus,
       durationMs,
       error: isHealthy ? undefined : `HTTP ${res.status}, DB: ${dbStatus || "disconnected"}`,
@@ -129,6 +133,7 @@ export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
       cloud_ok: result.ok,
       cloud_duration_ms: result.durationMs,
       db_status: result.dbStatus,
+      db_latency_ms: result.dbLatencyMs,
     });
 
     // 4. Evaluate Dead Man's Switch for On-Premise Node

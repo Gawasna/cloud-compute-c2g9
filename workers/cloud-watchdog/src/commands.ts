@@ -1,6 +1,11 @@
 import { executeProbe, type Env } from "./index.ts";
 import { getDmsState, getTelemetryRingBuffer } from "./dms.ts";
-import { summarizeTelemetry, generateQuickChartUrl, generateKumaChartUrl } from "./chart.ts";
+import {
+  summarizeTelemetry,
+  generateCloudChartUrl,
+  generateNodeChartUrl,
+  generateKumaChartUrl,
+} from "./chart.ts";
 import { sendTelegramPhoto, escapeHtml } from "./notifier.ts";
 
 export interface TelegramChat {
@@ -173,7 +178,7 @@ export async function handleTelegramCommand(
     ].join("\n");
 
     await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, reply);
-  } else if (command === "/chart" || command === "/chart_kuma") {
+  } else if (command === "/chart" || command === "/chart_kuma" || command === "/chart_node" || command === "/chart_cloud") {
     console.log(`[Commands] Executing ${command} for chat ${chatId}`);
 
     if (!env.WATCHDOG_KV) {
@@ -195,7 +200,9 @@ export async function handleTelegramCommand(
       return;
     }
 
-    const isKumaMode = parts[1]?.toLowerCase() === "kuma" || command === "/chart_kuma";
+    const subcmd = parts[1]?.toLowerCase();
+    const isKumaMode = subcmd === "kuma" || command === "/chart_kuma";
+    const isNodeMode = subcmd === "node" || subcmd === "hp" || command === "/chart_node";
     let chartUrl: string;
     let caption: string;
 
@@ -233,16 +240,41 @@ export async function handleTelegramCommand(
           `• <b>Sự kiện lỗi:</b> <code>0 sự cố</code>`,
         ].join("\n");
       }
-    } else {
-      chartUrl = generateQuickChartUrl(buffer);
-      const summary = summarizeTelemetry(buffer);
+    } else if (isNodeMode) {
+      chartUrl = generateNodeChartUrl(buffer);
+      const hpPoints = buffer.filter((p) => p.hp_load !== undefined || p.hp_mem_mb !== undefined);
+      const loads = hpPoints.map((p) => p.hp_load).filter((v): v is number => typeof v === "number");
+      const mems = hpPoints.map((p) => p.hp_mem_mb).filter((v): v is number => typeof v === "number");
+      const avgLoad = loads.length ? (loads.reduce((a, b) => a + b, 0) / loads.length).toFixed(2) : "N/A";
+      const avgMem = mems.length ? Math.round(mems.reduce((a, b) => a + b, 0) / mems.length) : "N/A";
+
       caption = [
-        `<b>[BIỂU ĐỒ ĐỘ TRỄ & TẢI HỆ THỐNG]</b>`,
-        `Dữ liệu ${buffer.length} chu kỳ gần nhất (chu kỳ 10m).`,
-        `• Cloud Latency TB: <code>${summary.avgCloudLatency}ms</code> (Max: ${summary.maxCloudLatency}ms)`,
-        `• On-Prem Load TB: <code>${summary.avgHpLoad}</code>`,
-        `<i>(Mẹo: Gõ <code>/chart kuma</code> để xem biểu đồ chi tiết các monitor Kuma)</i>`,
+        `<b>[BIỂU ĐỒ TÀI NGUYÊN MÁY CHỦ HP NODE]</b>`,
+        `Dữ liệu ${hpPoints.length} chu kỳ đo từ service account ikari (chu kỳ 10m):`,
+        `• <b>CPU Load Avg TB:</b> <code>${avgLoad}</code>`,
+        `• <b>RAM sử dụng TB:</b> <code>${avgMem} MB / 7712 MB</code>`,
+        ``,
+        `<i>(Mẹo: Gõ <code>/chart</code> để xem Cloud Latency | <code>/chart kuma</code> để xem 8h Kuma)</i>`,
       ].join("\n");
+    } else {
+      // Cloud Performance: Edge API Latency vs Supabase DB Latency
+      chartUrl = generateCloudChartUrl(buffer);
+      const cloudPoints = buffer.filter((p) => p.cloud_duration_ms !== undefined);
+      const latencies = cloudPoints.map((p) => p.cloud_duration_ms).filter((v): v is number => typeof v === "number");
+      const dbLatencies = cloudPoints.map((p) => p.db_latency_ms).filter((v): v is number => typeof v === "number");
+      const avgLatency = latencies.length ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0;
+      const maxLatency = latencies.length ? Math.max(...latencies) : 0;
+      const avgDb = dbLatencies.length ? Math.round(dbLatencies.reduce((a, b) => a + b, 0) / dbLatencies.length) : null;
+      const dbLine = avgDb !== null ? `• <b>Supabase DB Latency TB:</b> <code>${avgDb} ms</code>` : null;
+
+      caption = [
+        `<b>[BIỂU ĐỒ HIỆU NĂNG CLOUD (VERCEL & SUPABASE)]</b>`,
+        `Phân rã độ trễ API Edge vs Truy vấn Database (${cloudPoints.length} chu kỳ 10m):`,
+        `• <b>Total API Latency TB:</b> <code>${avgLatency} ms</code> (Max: ${maxLatency} ms)`,
+        dbLine,
+        ``,
+        `<i>(Mẹo: Gõ <code>/chart node</code> để xem CPU & RAM HP Node | <code>/chart kuma</code> để xem 8h Kuma)</i>`,
+      ].filter(Boolean).join("\n");
     }
 
     const sent = await sendTelegramPhoto(env.TELEGRAM_BOT_TOKEN, chatId, chartUrl, caption);
@@ -284,8 +316,9 @@ export async function handleTelegramCommand(
       `<b>[DANH MỤC LỆNH GIÁM SÁT WATCHDOG]</b>`,
       ``,
       `• <code>/status</code> - Báo cáo tổng thể hợp nhất (Cloud Vercel/Supabase + On-Premise DMS).`,
-      `• <code>/chart</code> - Xuất ảnh biểu đồ trực quan hóa độ trễ và tải CPU (QuickChart).`,
-      `• <code>/chart kuma</code> - Xuất ảnh biểu đồ độ trễ các monitor Kuma (Supabase/Vercel/Uplink).`,
+      `• <code>/chart</code> - Biểu đồ hiệu năng Cloud (Độ trễ Edge API vs Supabase DB).`,
+      `• <code>/chart node</code> - Biểu đồ tài nguyên máy chủ HP Node (CPU Load & RAM MB).`,
+      `• <code>/chart kuma</code> - Biểu đồ độ trễ 8h Uptime Kuma & sự kiện lỗi Failed Events.`,
       `• <code>/ping</code> - Đo độ trễ từ Cloudflare Edge đến Vercel API.`,
       `• <code>/help</code> - Hiển thị danh mục lệnh hỗ trợ.`,
       ``,

@@ -245,7 +245,7 @@ describe("Telegram Slash Commands Handler Tests", () => {
     const envWithKv = { ...mockEnv, WATCHDOG_KV: mockKv };
 
     try {
-      // 1. Test default /chart
+      // 1. Test default /chart (Cloud mode)
       await handleTelegramCommand(
         {
           update_id: 7,
@@ -258,15 +258,32 @@ describe("Telegram Slash Commands Handler Tests", () => {
         },
         envWithKv
       );
-      assert.match(sentCaption, /BIỂU ĐỒ ĐỘ TRỄ & TẢI HỆ THỐNG/);
+      assert.match(sentCaption, /BIỂU ĐỒ HIỆU NĂNG CLOUD/);
       assert.match(sentPhotoUrl, /Cloud%20Latency/);
 
-      // 2. Test /chart kuma
+      // 2. Test /chart node (HP node hardware mode)
       await handleTelegramCommand(
         {
           update_id: 8,
           message: {
             message_id: 17,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/chart node",
+            date: 1731670000,
+          },
+        },
+        envWithKv
+      );
+      assert.match(sentCaption, /BIỂU ĐỒ TÀI NGUYÊN MÁY CHỦ HP NODE/);
+      assert.match(sentCaption, /CPU Load Avg TB/);
+      assert.match(sentPhotoUrl, /HP%20EliteDesk/);
+
+      // 3. Test /chart kuma
+      await handleTelegramCommand(
+        {
+          update_id: 9,
+          message: {
+            message_id: 18,
             chat: { id: "-100999888777", type: "supergroup" },
             text: "/chart kuma",
             date: 1731670000,
