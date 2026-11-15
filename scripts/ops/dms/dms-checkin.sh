@@ -45,35 +45,92 @@ if [[ -f "/proc/uptime" ]]; then
     UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
 fi
 
-# 4. Probe local Uptime Kuma instance and extract rich telemetry
+# 4. Harvest rich Uptime Kuma telemetry (8h time-series & failed events)
 KUMA_STATUS="down"
 KUMA_TELEMETRY='{"status":"down"}'
 
-KUMA_RAW=$(curl -s -m 2 http://127.0.0.1:3001/api/status-page/heartbeat/cloudstock 2>/dev/null || true)
-if [[ -n "${KUMA_RAW}" && "${KUMA_RAW}" == *"heartbeatList"* ]]; then
-    KUMA_STATUS="up"
-    if command -v jq >/dev/null 2>&1; then
-        PARSED_KUMA=$(echo "${KUMA_RAW}" | jq -c '
-        {
-          status: "up",
-          monitors_total: (.heartbeatList | length),
-          monitors_up: ([.heartbeatList[] | last | select(.status == 1)] | length),
-          monitors_down: ([.heartbeatList[] | last | select(.status == 0)] | length),
-          supabase_db_ping_ms: (.heartbeatList["1"] | last | .ping // null),
-          vercel_api_ping_ms: (.heartbeatList["3"] | last | .ping // null),
-          internet_uplink_ping_ms: (.heartbeatList["7"] | last | .ping // null),
-          uptime_24h_percent: ([.uptimeList[]] | if length > 0 then ((add / length) * 1000 | round / 10) else 100 end)
-        }' 2>/dev/null || true)
-        if [[ -n "${PARSED_KUMA}" ]]; then
-            KUMA_TELEMETRY="${PARSED_KUMA}"
-        else
-            KUMA_TELEMETRY='{"status":"up"}'
-        fi
-    else
-        KUMA_TELEMETRY='{"status":"up"}'
+if command -v python3 >/dev/null 2>&1; then
+    PY_KUMA=$(python3 - << 'EOF' 2>/dev/null || true
+import urllib.request, json
+
+try:
+    status_req = urllib.request.urlopen('http://127.0.0.1:3001/api/status-page/cloudstock', timeout=3)
+    status_data = json.loads(status_req.read())
+
+    hb_req = urllib.request.urlopen('http://127.0.0.1:3001/api/status-page/heartbeat/cloudstock', timeout=3)
+    hb_data = json.loads(hb_req.read())
+
+    monitor_names = {}
+    for g in status_data.get('publicGroupList', []):
+        for m in g.get('monitorList', []):
+            monitor_names[str(m['id'])] = m['name']
+
+    hb = hb_data.get('heartbeatList', {})
+    uptime = hb_data.get('uptimeList', {})
+
+    # 1. Extract Failed Events
+    failed_events = []
+    for m_id, points in hb.items():
+        name = monitor_names.get(m_id, f'Monitor {m_id}')
+        for p in points:
+            if p.get('status') == 0:
+                failed_events.append({
+                    'monitor_id': int(m_id),
+                    'monitor_name': name,
+                    'time': p.get('time', ''),
+                    'msg': p.get('msg', 'Down'),
+                    'ping': p.get('ping')
+                })
+
+    # 2. Extract Downsampled Time-Series (~20 points over 8h)
+    m1_points = hb.get('1', [])
+    total_pts = len(m1_points)
+    step = max(1, total_pts // 20)
+    indices = list(range(0, total_pts, step))
+    if total_pts > 0 and indices[-1] != total_pts - 1:
+        indices.append(total_pts - 1)
+
+    series = []
+    for idx in indices:
+        p1 = m1_points[idx] if idx < len(m1_points) else {}
+        raw_time = p1.get('time', '')
+        short_time = raw_time[11:16] if len(raw_time) >= 16 else f'P{idx}'
+        p3 = hb.get('3', [])[idx] if idx < len(hb.get('3', [])) else {}
+        p4 = hb.get('4', [])[idx] if idx < len(hb.get('4', [])) else {}
+        p7 = hb.get('7', [])[idx] if idx < len(hb.get('7', [])) else {}
+        series.append({
+            'time': short_time,
+            'supabase_ping': p1.get('ping'),
+            'vercel_health_ping': p3.get('ping'),
+            'vercel_front_ping': p4.get('ping'),
+            'uplink_ping': p7.get('ping')
+        })
+
+    result = {
+        'status': 'up',
+        'monitors_total': len(hb),
+        'monitors_up': sum(1 for v in hb.values() if v and v[-1].get('status') == 1),
+        'monitors_down': sum(1 for v in hb.values() if v and v[-1].get('status') == 0),
+        'uptime_24h_percent': round(sum(uptime.values()) / max(1, len(uptime)) * 100, 1),
+        'supabase_db_ping_ms': hb.get('1', [{}])[-1].get('ping'),
+        'vercel_api_ping_ms': hb.get('3', [{}])[-1].get('ping'),
+        'internet_uplink_ping_ms': hb.get('7', [{}])[-1].get('ping'),
+        'failed_events': failed_events[-10:],
+        'series': series
+    }
+    print(json.dumps(result))
+except Exception:
+    pass
+EOF
+)
+    if [[ -n "${PY_KUMA}" ]]; then
+        KUMA_STATUS="up"
+        KUMA_TELEMETRY="${PY_KUMA}"
     fi
-else
-    # Fallback shallow probe if status page endpoint is unreachable
+fi
+
+# Fallback probe if Python extraction was empty
+if [[ "${KUMA_STATUS}" == "down" ]]; then
     HTTP_KUMA=$(curl -s -m 2 -o /dev/null -w "%{http_code}" http://127.0.0.1:3001/ 2>/dev/null || true)
     if [[ "${HTTP_KUMA}" =~ ^(200|302|401)$ ]]; then
         KUMA_STATUS="up"

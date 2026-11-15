@@ -1,4 +1,4 @@
-import type { TelemetryPoint } from "./dms.ts";
+import type { TelemetryPoint, KumaSeriesPoint } from "./dms.ts";
 
 /**
  * Generates a Unicode sparkline string from a numeric array.
@@ -149,8 +149,91 @@ export function generateQuickChartUrl(buffer: TelemetryPoint[]): string {
 
 /**
  * Generates a QuickChart URL specialized for Uptime Kuma monitors ping latency.
+ * Accepts either an explicit Kuma 8-hour time series or fallback points from ring buffer.
  */
-export function generateKumaChartUrl(points: TelemetryPoint[]): string {
+export function generateKumaChartUrl(
+  series?: KumaSeriesPoint[],
+  fallbackPoints?: TelemetryPoint[]
+): string {
+  // 1. If explicit Kuma 8-hour series is available (>= 2 points)
+  if (series && series.length >= 2) {
+    const labels = series.map((s) => s.time);
+    const supabaseData = series.map((s) => s.supabase_ping ?? null);
+    const vercelHealthData = series.map((s) => s.vercel_health_ping ?? null);
+    const vercelFrontData = series.map((s) => s.vercel_front_ping ?? null);
+    const uplinkData = series.map((s) => s.uplink_ping ?? null);
+
+    const chartConfig = {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Supabase DB (ms)",
+            data: supabaseData,
+            borderColor: "#f97316",
+            backgroundColor: "transparent",
+            fill: false,
+            tension: 0.25,
+            pointRadius: 2,
+          },
+          {
+            label: "Vercel Health (ms)",
+            data: vercelHealthData,
+            borderColor: "#38bdf8",
+            backgroundColor: "transparent",
+            fill: false,
+            tension: 0.25,
+            pointRadius: 2,
+          },
+          {
+            label: "Vercel Front (ms)",
+            data: vercelFrontData,
+            borderColor: "#a855f7",
+            backgroundColor: "transparent",
+            fill: false,
+            tension: 0.25,
+            pointRadius: 2,
+          },
+          {
+            label: "Uplink 1.1.1.1 (ms)",
+            data: uplinkData,
+            borderColor: "#4ade80",
+            backgroundColor: "transparent",
+            fill: false,
+            tension: 0.25,
+            pointRadius: 2,
+          },
+        ],
+      },
+      options: {
+        title: {
+          display: true,
+          text: "Uptime Kuma 8-Hour Monitor Latency (On-Premise HP)",
+          fontColor: "#ffffff",
+        },
+        legend: {
+          labels: { fontColor: "#cbd5e1", boxWidth: 12 },
+        },
+        scales: {
+          xAxes: [{ ticks: { fontColor: "#94a3b8", autoSkip: true, maxTicksLimit: 10 }, gridLines: { color: "rgba(255,255,255,0.05)" } }],
+          yAxes: [
+            {
+              scaleLabel: { display: true, labelString: "Latency (ms)", fontColor: "#cbd5e1" },
+              ticks: { fontColor: "#cbd5e1", beginAtZero: true },
+              gridLines: { color: "rgba(255,255,255,0.05)" },
+            },
+          ],
+        },
+      },
+    };
+
+    const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
+    return `https://quickchart.io/chart?bkg=%230f172a&w=650&h=320&c=${encodedConfig}`;
+  }
+
+  // 2. Fallback to ring buffer telemetry points
+  const points = fallbackPoints || [];
   if (points.length === 0) {
     return "https://quickchart.io/chart?bkg=%230f172a&w=600&h=300&c=%7B%22type%22%3A%22line%22%2C%22data%22%3A%7B%22labels%22%3A%5B%5D%2C%22datasets%22%3A%5B%5D%7D%2C%22options%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22No+Kuma+Data+Available%22%2C%22fontColor%22%3A%22%23ffffff%22%7D%7D%7D";
   }
@@ -166,7 +249,7 @@ export function generateKumaChartUrl(points: TelemetryPoint[]): string {
   const vercelData = points.map((p) => p.kuma_vercel_ping_ms ?? null);
   const uplinkData = points.map((p) => p.kuma_uplink_ping_ms ?? null);
 
-  const chartConfig = {
+  const fallbackConfig = {
     type: "line",
     data: {
       labels,
@@ -219,6 +302,6 @@ export function generateKumaChartUrl(points: TelemetryPoint[]): string {
     },
   };
 
-  const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
-  return `https://quickchart.io/chart?bkg=%230f172a&w=600&h=300&c=${encodedConfig}`;
+  const encodedFallback = encodeURIComponent(JSON.stringify(fallbackConfig));
+  return `https://quickchart.io/chart?bkg=%230f172a&w=600&h=300&c=${encodedFallback}`;
 }

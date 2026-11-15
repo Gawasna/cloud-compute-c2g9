@@ -174,15 +174,26 @@ describe("Telemetry Sparkline & Visualization Tests", () => {
     assert.match(url, /Cloud%20Latency/);
   });
 
-  it("generateKumaChartUrl produces valid chart URL with kuma datasets", () => {
+  it("generateKumaChartUrl produces valid chart URL with kuma 8h series and fallback datasets", () => {
+    // 1. Series mode
+    const series = [
+      { time: "05:15", supabase_ping: 450, vercel_health_ping: 1200, vercel_front_ping: 160, uplink_ping: 15 },
+      { time: "06:15", supabase_ping: 460, vercel_health_ping: 1100, vercel_front_ping: 155, uplink_ping: 14 },
+    ];
+    const seriesUrl = generateKumaChartUrl(series);
+    assert.match(seriesUrl, /^https:\/\/quickchart\.io\/chart\?/);
+    assert.match(seriesUrl, /Uptime%20Kuma%208-Hour/);
+    assert.match(seriesUrl, /Supabase%20DB/);
+    assert.match(seriesUrl, /Vercel%20Front/);
+
+    // 2. Fallback mode
     const points = [
       { ts: 1731690000, kuma_supabase_ping_ms: 450, kuma_vercel_ping_ms: 1200, kuma_uplink_ping_ms: 15 },
       { ts: 1731690600, kuma_supabase_ping_ms: 460, kuma_vercel_ping_ms: 1100, kuma_uplink_ping_ms: 14 },
     ];
-    const url = generateKumaChartUrl(points);
-    assert.match(url, /^https:\/\/quickchart\.io\/chart\?/);
-    assert.match(url, /Uptime%20Kuma/);
-    assert.match(url, /Supabase%20DB/);
+    const fallbackUrl = generateKumaChartUrl(undefined, points);
+    assert.match(fallbackUrl, /^https:\/\/quickchart\.io\/chart\?/);
+    assert.match(fallbackUrl, /Uptime%20Kuma/);
   });
 });
 
@@ -203,12 +214,21 @@ describe("Kuma Telemetry Ingestion Tests", () => {
         vercel_api_ping_ms: 1295,
         internet_uplink_ping_ms: 15,
         uptime_24h_percent: 100.0,
+        failed_events: [
+          { monitor_id: 1, monitor_name: "Supabase DB", time: "2026-11-15 08:00:00", msg: "Timeout", ping: 10000 },
+        ],
+        series: [
+          { time: "05:00", supabase_ping: 500, vercel_health_ping: 1300, vercel_front_ping: 160, uplink_ping: 20 },
+          { time: "06:00", supabase_ping: 510, vercel_health_ping: 1250, vercel_front_ping: 155, uplink_ping: 19 },
+        ],
       },
     };
 
     const res = await recordCheckin(kv, payload);
     assert.equal(res.state.kuma.monitors_total, 7);
     assert.equal(res.state.kuma.supabase_db_ping_ms, 488);
+    assert.equal(res.state.kuma.failed_events.length, 1);
+    assert.equal(res.state.kuma.series.length, 2);
 
     const buffer = await getTelemetryRingBuffer(kv);
     assert.equal(buffer.length, 1);
