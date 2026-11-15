@@ -1,0 +1,17 @@
+[Unit]
+Description=Dead Man's Switch (DMS) Check-in to Cloudflare Edge Watchdog
+Documentation=https://github.com/Gawasna/cloud-compute-c2g9/issues/21
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/home/ikari/ops/.env
+EnvironmentFile=-/home/ikari/.env.dms
+ExecStart=/bin/bash /home/ikari/ops/dms/dms-checkin.sh
+StandardOutput=journal
+StandardError=journal
+TimeoutSec=30
+
+[Install]
+WantedBy=default.target
