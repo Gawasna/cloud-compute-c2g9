@@ -7,6 +7,12 @@ Format follows [Conventional Commits](https://www.conventionalcommits.org/) and 
 
 ## [Unreleased]
 
+### UI/UX & Design System Modernization
+- **SVG Icon System (`lucide-react`)**: Replaced all Unicode mockup characters (`▥`, `◈`, `♧`, etc.) with standardized SVG icons, optical alignment, and accessible `aria-hidden` attributes across Sidebar, Topbar, Modals, Tables, and Login (TASK-20261115-0003).
+- **Bilingual Localization (`i18n`)**: Unified localization system with Vietnamese (default) and English parity dictionaries, `I18nProvider`, `LanguageSwitcher` widget, and standard number/currency formatting (TASK-20261115-0004).
+- **Enterprise Data Visualization (`recharts`)**: Integrated Recharts for React 19, implementing `MovementTrendChart` (dual-bar Inbound/Outbound with auto Y-axis) and `StockDistributionChart` (interactive Donut chart with active sector highlight and center counts), replacing hand-rolled CSS bars (TASK-20261115-0005).
+- **Shared Design Tokens**: Created `src/lib/theme/tokens.ts` establishing unified semantic colors, chart palettes, and icon sizing constants.
+
 ### Operations / Watchdog
 - Consolidated First Stream telemetry into Telegram: Sentry P0 issue alert webhook (`/api/sentry-webhook`), BugSink SQLite anomaly spike detection (`/srv/.../bugsink/data/db.sqlite3` on HP node), and Supabase PostgreSQL database webhook (`/api/supabase-webhook`) with multi-cycle latency degradation guard (TASK-20261115-0011, TASK-20261115-0012, TASK-20261115-0013 / Issue #21)
 - Decouple Telegram `/chart` command into distinct domain visualizations: `/chart` (or `/chart cloud`) for Cloud Edge vs Database latency (ms), `/chart node` (or `/chart hp`) for HP EliteDesk CPU Load vs RAM MB/%, and `/chart kuma` for 8-hour Uptime Kuma monitor series and failures (TASK-20261115-0006 / Issue #21)
