@@ -9,7 +9,7 @@ import {
   evaluateDmsTimeout,
   DMS_STATE_KEY,
 } from "../src/dms.ts";
-import { generateSparkline, summarizeTelemetry, generateQuickChartUrl } from "../src/chart.ts";
+import { generateSparkline, summarizeTelemetry, generateQuickChartUrl, generateKumaChartUrl } from "../src/chart.ts";
 import worker from "../src/index.ts";
 
 // Helper to create an in-memory mock KVNamespace for testing
@@ -172,6 +172,48 @@ describe("Telemetry Sparkline & Visualization Tests", () => {
     const url = generateQuickChartUrl(points);
     assert.match(url, /^https:\/\/quickchart\.io\/chart\?/);
     assert.match(url, /Cloud%20Latency/);
+  });
+
+  it("generateKumaChartUrl produces valid chart URL with kuma datasets", () => {
+    const points = [
+      { ts: 1731690000, kuma_supabase_ping_ms: 450, kuma_vercel_ping_ms: 1200, kuma_uplink_ping_ms: 15 },
+      { ts: 1731690600, kuma_supabase_ping_ms: 460, kuma_vercel_ping_ms: 1100, kuma_uplink_ping_ms: 14 },
+    ];
+    const url = generateKumaChartUrl(points);
+    assert.match(url, /^https:\/\/quickchart\.io\/chart\?/);
+    assert.match(url, /Uptime%20Kuma/);
+    assert.match(url, /Supabase%20DB/);
+  });
+});
+
+describe("Kuma Telemetry Ingestion Tests", () => {
+  it("recordCheckin stores rich kuma telemetry into state and ring buffer", async () => {
+    const kv = createMockKv();
+    const payload = {
+      node: "elitedesk-mint",
+      uptime_kuma: "up",
+      load_avg: 0.2,
+      memory_used_mb: 2100,
+      kuma: {
+        status: "up",
+        monitors_total: 7,
+        monitors_up: 7,
+        monitors_down: 0,
+        supabase_db_ping_ms: 488,
+        vercel_api_ping_ms: 1295,
+        internet_uplink_ping_ms: 15,
+        uptime_24h_percent: 100.0,
+      },
+    };
+
+    const res = await recordCheckin(kv, payload);
+    assert.equal(res.state.kuma.monitors_total, 7);
+    assert.equal(res.state.kuma.supabase_db_ping_ms, 488);
+
+    const buffer = await getTelemetryRingBuffer(kv);
+    assert.equal(buffer.length, 1);
+    assert.equal(buffer[0].kuma_supabase_ping_ms, 488);
+    assert.equal(buffer[0].kuma_monitors_up, 7);
   });
 });
 

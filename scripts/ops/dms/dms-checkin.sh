@@ -45,11 +45,40 @@ if [[ -f "/proc/uptime" ]]; then
     UPTIME_SEC=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
 fi
 
-# 4. Probe local Uptime Kuma instance (Port 3001)
+# 4. Probe local Uptime Kuma instance and extract rich telemetry
 KUMA_STATUS="down"
-HTTP_KUMA=$(curl -s -m 2 -o /dev/null -w "%{http_code}" http://127.0.0.1:3001/ 2>/dev/null || true)
-if [[ "${HTTP_KUMA}" =~ ^(200|302|401)$ ]]; then
+KUMA_TELEMETRY='{"status":"down"}'
+
+KUMA_RAW=$(curl -s -m 2 http://127.0.0.1:3001/api/status-page/heartbeat/cloudstock 2>/dev/null || true)
+if [[ -n "${KUMA_RAW}" && "${KUMA_RAW}" == *"heartbeatList"* ]]; then
     KUMA_STATUS="up"
+    if command -v jq >/dev/null 2>&1; then
+        PARSED_KUMA=$(echo "${KUMA_RAW}" | jq -c '
+        {
+          status: "up",
+          monitors_total: (.heartbeatList | length),
+          monitors_up: ([.heartbeatList[] | last | select(.status == 1)] | length),
+          monitors_down: ([.heartbeatList[] | last | select(.status == 0)] | length),
+          supabase_db_ping_ms: (.heartbeatList["1"] | last | .ping // null),
+          vercel_api_ping_ms: (.heartbeatList["3"] | last | .ping // null),
+          internet_uplink_ping_ms: (.heartbeatList["7"] | last | .ping // null),
+          uptime_24h_percent: ([.uptimeList[]] | if length > 0 then ((add / length) * 1000 | round / 10) else 100 end)
+        }' 2>/dev/null || true)
+        if [[ -n "${PARSED_KUMA}" ]]; then
+            KUMA_TELEMETRY="${PARSED_KUMA}"
+        else
+            KUMA_TELEMETRY='{"status":"up"}'
+        fi
+    else
+        KUMA_TELEMETRY='{"status":"up"}'
+    fi
+else
+    # Fallback shallow probe if status page endpoint is unreachable
+    HTTP_KUMA=$(curl -s -m 2 -o /dev/null -w "%{http_code}" http://127.0.0.1:3001/ 2>/dev/null || true)
+    if [[ "${HTTP_KUMA}" =~ ^(200|302|401)$ ]]; then
+        KUMA_STATUS="up"
+        KUMA_TELEMETRY='{"status":"up"}'
+    fi
 fi
 
 ISO_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -63,7 +92,8 @@ PAYLOAD=$(cat <<EOF
   "memory_used_mb": ${MEM_USED:-0},
   "memory_total_mb": ${MEM_TOTAL:-0},
   "uptime_sec": ${UPTIME_SEC:-0},
-  "timestamp": "${ISO_TIMESTAMP}"
+  "timestamp": "${ISO_TIMESTAMP}",
+  "kuma": ${KUMA_TELEMETRY}
 }
 EOF
 )

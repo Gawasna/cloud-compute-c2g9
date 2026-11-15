@@ -146,3 +146,79 @@ export function generateQuickChartUrl(buffer: TelemetryPoint[]): string {
   const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
   return `https://quickchart.io/chart?bkg=%230f172a&w=600&h=300&c=${encodedConfig}`;
 }
+
+/**
+ * Generates a QuickChart URL specialized for Uptime Kuma monitors ping latency.
+ */
+export function generateKumaChartUrl(points: TelemetryPoint[]): string {
+  if (points.length === 0) {
+    return "https://quickchart.io/chart?bkg=%230f172a&w=600&h=300&c=%7B%22type%22%3A%22line%22%2C%22data%22%3A%7B%22labels%22%3A%5B%5D%2C%22datasets%22%3A%5B%5D%7D%2C%22options%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22No+Kuma+Data+Available%22%2C%22fontColor%22%3A%22%23ffffff%22%7D%7D%7D";
+  }
+
+  const labels = points.map((p) => {
+    const d = new Date(p.ts * 1000);
+    const hh = String(d.getUTCHours() + 7).padStart(2, "0"); // GMT+7
+    const mm = String(d.getUTCMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  });
+
+  const supabaseData = points.map((p) => p.kuma_supabase_ping_ms ?? null);
+  const vercelData = points.map((p) => p.kuma_vercel_ping_ms ?? null);
+  const uplinkData = points.map((p) => p.kuma_uplink_ping_ms ?? null);
+
+  const chartConfig = {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Supabase DB (ms)",
+          data: supabaseData,
+          borderColor: "#f97316",
+          backgroundColor: "rgba(249, 115, 22, 0.1)",
+          fill: false,
+          tension: 0.3,
+        },
+        {
+          label: "Vercel API (ms)",
+          data: vercelData,
+          borderColor: "#38bdf8",
+          backgroundColor: "rgba(56, 189, 248, 0.1)",
+          fill: false,
+          tension: 0.3,
+        },
+        {
+          label: "Internet Uplink (ms)",
+          data: uplinkData,
+          borderColor: "#4ade80",
+          backgroundColor: "rgba(74, 222, 128, 0.1)",
+          fill: false,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      title: {
+        display: true,
+        text: "Uptime Kuma On-Premise Ping Latency (GMT+7)",
+        fontColor: "#ffffff",
+      },
+      legend: {
+        labels: { fontColor: "#cbd5e1" },
+      },
+      scales: {
+        xAxes: [{ ticks: { fontColor: "#94a3b8" }, gridLines: { color: "rgba(255,255,255,0.05)" } }],
+        yAxes: [
+          {
+            scaleLabel: { display: true, labelString: "Latency (ms)", fontColor: "#cbd5e1" },
+            ticks: { fontColor: "#cbd5e1", beginAtZero: true },
+            gridLines: { color: "rgba(255,255,255,0.05)" },
+          },
+        ],
+      },
+    },
+  };
+
+  const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
+  return `https://quickchart.io/chart?bkg=%230f172a&w=600&h=300&c=${encodedConfig}`;
+}

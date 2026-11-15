@@ -8,6 +8,7 @@ Format follows [Conventional Commits](https://www.conventionalcommits.org/) and 
 ## [Unreleased]
 
 ### Operations / Watchdog
+- Uptime Kuma rich telemetry integration (monitor counts, 24h uptime, ping latency for Supabase DB/Vercel API/Internet Uplink) into Dead Man's Switch heartbeat and `/chart kuma` Telegram command (TASK-20261115-0004 / Issue #21)
 - Sudo packaging suite (`scripts/ops/dms/pack-for-ikari.sh`, `scripts/pack-dms-to-ikari.sh`) and systemd user timer (10m) for service account ikari on HP Node (TASK-20261115-0003 / Issue #21)
 - Dead Man's Switch (DMS) inverted heartbeat protocol for on-premise HP EliteDesk node monitoring behind NAT (TASK-20261115-0002 / Issue #21)
 - Telemetry Ring Buffer (48 points / 8h sliding window) on Cloudflare KV with zero-cost write budgeting (288 writes/day) (TASK-20261115-0002)
