@@ -16,7 +16,7 @@ describe("Cloud Watchdog Worker Probe & Notifier Tests", () => {
       if (req.url === "/api/health") {
         if (responseMode === "healthy") {
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ status: "healthy", database: { status: "connected" } }));
+          res.end(JSON.stringify({ status: "healthy", database: { status: "connected", latency_ms: 45 } }));
         } else if (responseMode === "cold-start") {
           if (requestCount === 1) {
             // First attempt fails with 503 (cold start)
@@ -63,6 +63,7 @@ describe("Cloud Watchdog Worker Probe & Notifier Tests", () => {
     assert.equal(result.ok, true);
     assert.equal(result.statusCode, 200);
     assert.equal(result.dbStatus, "connected");
+    assert.equal(result.dbLatencyMs, 45);
   });
 
   it("executeProbe returns ok=false when dbStatus is not connected", async () => {
