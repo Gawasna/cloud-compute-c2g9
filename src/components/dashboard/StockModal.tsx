@@ -1,5 +1,8 @@
+'use client';
+
 import React, { useState } from 'react';
 import { Modal } from '@/components/ui';
+import { useI18n } from '@/lib/i18n';
 import type { Product } from './types';
 
 export interface StockModalProps {
@@ -22,6 +25,7 @@ export default function StockModal({
   products,
   initialSku = '',
 }: StockModalProps) {
+  const { t, formatNumber, interpolate } = useI18n();
   const [selectedSku, setSelectedSku] = useState(
     initialSku || products[0]?.sku || ''
   );
@@ -36,18 +40,21 @@ export default function StockModal({
     const qty = Number(quantity);
 
     if (!product) {
-      setError('The selected product does not exist in the system.');
+      setError(t.stockModal.errNotExists);
       return;
     }
 
     if (!Number.isSafeInteger(qty) || qty <= 0) {
-      setError('Quantity must be a positive integer (> 0).');
+      setError(t.stockModal.errPositive);
       return;
     }
 
     if (type === 'OUT' && qty > product.stock) {
       setError(
-        `Cannot issue more than current stock quantity (${product.stock} ${product.unit}).`
+        interpolate(t.stockModal.errExceed, {
+          stock: formatNumber(product.stock),
+          unit: product.unit,
+        })
       );
       return;
     }
@@ -64,7 +71,7 @@ export default function StockModal({
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create stock ticket.');
+      setError(err instanceof Error ? err.message : t.stockModal.errCreate);
     } finally {
       setSaving(false);
     }
@@ -74,8 +81,8 @@ export default function StockModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Create Stock Movement"
-      description="Stock quantities and movement logs will automatically update upon confirmation."
+      title={t.stockModal.title}
+      description={t.stockModal.desc}
       actions={
         <>
           <button
@@ -84,7 +91,7 @@ export default function StockModal({
             onClick={onClose}
             disabled={saving}
           >
-            Cancel
+            {t.common.cancel}
           </button>
           <button
             type="button"
@@ -92,39 +99,39 @@ export default function StockModal({
             disabled={saving}
             onClick={handleConfirm}
           >
-            {saving ? 'Saving...' : 'Confirm'}
+            {saving ? t.common.saving : t.common.confirm}
           </button>
         </>
       }
     >
       <div className="form-grid">
         <label className="wide">
-          Product
+          {t.stockModal.productLabel}
           <select
             value={selectedSku}
             onChange={(e) => setSelectedSku(e.target.value)}
           >
             {products.map((p) => (
               <option key={p.id} value={p.sku}>
-                {p.name} ({p.sku}) — stock: {p.stock} {p.unit}
+                {p.name} ({p.sku}) — {t.common.stock}: {formatNumber(p.stock)} {p.unit}
               </option>
             ))}
           </select>
         </label>
 
         <label>
-          Movement Type
+          {t.stockModal.typeLabel}
           <select
             value={type}
             onChange={(e) => setType(e.target.value as 'IN' | 'OUT')}
           >
-            <option value="IN">Stock In (＋)</option>
-            <option value="OUT">Stock Out (－)</option>
+            <option value="IN">{t.stockModal.typeIn}</option>
+            <option value="OUT">{t.stockModal.typeOut}</option>
           </select>
         </label>
 
         <label>
-          Quantity
+          {t.stockModal.quantityLabel}
           <input
             type="number"
             min="1"
@@ -134,11 +141,11 @@ export default function StockModal({
         </label>
 
         <label className="wide">
-          Note
+          {t.stockModal.noteLabel}
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Reason for movement or reference order number"
+            placeholder={t.stockModal.notePlaceholder}
           />
         </label>
       </div>

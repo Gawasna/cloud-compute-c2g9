@@ -2,12 +2,14 @@
 
 import React, { useEffect, useState } from 'react';
 import { apiRequest, type ArchivedProduct, type ArchivedResponse } from '@/lib/api/cloudstock';
+import { useI18n } from '@/lib/i18n';
 
 export interface ArchivedProductsTabProps {
   onRestored?: () => Promise<void> | void;
 }
 
 export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabProps) {
+  const { t, locale, formatNumber, formatDate, interpolate } = useI18n();
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -46,8 +48,17 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
   }, [page, query, reloadTrigger]);
 
   const handleRestore = async (p: ArchivedProduct) => {
-    const displayName = p.name_en?.trim() || p.name;
-    if (busyId || !window.confirm(`Restore "${displayName}" (${p.sku}) to active inventory?`)) {
+    const displayName =
+      locale === 'vi'
+        ? p.name
+        : p.name_en?.trim() || p.name;
+
+    const confirmText = interpolate(t.archivedTab.restoreConfirm, {
+      name: displayName,
+      sku: p.sku,
+    });
+
+    if (busyId || !window.confirm(confirmText)) {
       return;
     }
     setBusyId(p.id);
@@ -59,7 +70,7 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
       if (onRestored) {
         await onRestored();
       }
-      setMessage(`Product ${p.sku} restored successfully.`);
+      setMessage(interpolate(t.archivedTab.restoreSuccess, { sku: p.sku }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to restore product.');
     } finally {
@@ -73,8 +84,8 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
     <section className="panel">
       <div className="panel-head">
         <div>
-          <h2>Archived Products</h2>
-          <p>Products removed from active inventory. Restore a product without losing its stock history.</p>
+          <h2>{t.archivedTab.title}</h2>
+          <p>{t.archivedTab.desc}</p>
         </div>
         <button
           type="button"
@@ -82,7 +93,7 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
           onClick={() => setReloadTrigger((v) => v + 1)}
           disabled={loading}
         >
-          Refresh
+          {t.common.refresh}
         </button>
       </div>
 
@@ -95,15 +106,19 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
         }}
       >
         <input
-          aria-label="Search archived products"
-          placeholder="Search by English name, original name, or SKU..."
+          aria-label={t.archivedTab.searchPlaceholder}
+          placeholder={t.archivedTab.searchPlaceholder}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <button className="btn secondary" type="submit">
-          Search
+          {t.common.search}
         </button>
-        <span className="result-count">{data?.total ?? 0} archived</span>
+        <span className="result-count">
+          {interpolate(t.archivedTab.archivedCount, {
+            count: formatNumber(data?.total ?? 0),
+          })}
+        </span>
       </form>
 
       {error && (
@@ -116,54 +131,62 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
           {message}
         </p>
       )}
-      {loading && <p className="hint">Loading archived products...</p>}
+      {loading && <p className="hint">{t.archivedTab.loading}</p>}
 
       <div className="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>Product Name</th>
-              <th>SKU</th>
-              <th>Category</th>
-              <th>Stock</th>
-              <th>Archived At</th>
-              <th style={{ textAlign: 'right' }}>Action</th>
+              <th>{t.common.productName}</th>
+              <th>{t.common.sku}</th>
+              <th>{t.common.category}</th>
+              <th>{t.common.stock}</th>
+              <th>{t.archivedTab.archivedAt}</th>
+              <th style={{ textAlign: 'right' }}>{t.common.action}</th>
             </tr>
           </thead>
           <tbody>
-            {data?.items.map((p) => (
-              <tr key={p.id}>
-                <td>
-                  <strong>{p.name_en?.trim() || p.name}</strong>
-                  {p.name_en && p.name && p.name_en.trim() !== p.name.trim() && (
-                    <span className="hint" style={{ display: 'block', fontSize: 12 }}>
-                      {p.name}
-                    </span>
-                  )}
-                </td>
-                <td className="mono">{p.sku}</td>
-                <td>{p.category_name_en?.trim() || p.category_name}</td>
-                <td>
-                  {Number(p.stock_quantity).toLocaleString('en-US')}{' '}
-                  {(p.unit_symbol_en?.trim() || p.unit_symbol).toLowerCase()}
-                </td>
-                <td>{new Date(p.deleted_at).toLocaleString('en-US')}</td>
-                <td style={{ textAlign: 'right' }}>
-                  <button
-                    type="button"
-                    className="small-btn"
-                    disabled={busyId !== null}
-                    onClick={() => void handleRestore(p)}
-                  >
-                    {busyId === p.id ? 'Restoring...' : 'Restore'}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {data?.items.map((p) => {
+              const primaryName = locale === 'vi' ? p.name : p.name_en?.trim() || p.name;
+              const secondaryName = locale === 'vi' ? p.name_en?.trim() : p.name;
+              const catName =
+                locale === 'vi' ? p.category_name : p.category_name_en?.trim() || p.category_name;
+              const unitSymbol =
+                locale === 'vi' ? p.unit_symbol : p.unit_symbol_en?.trim() || p.unit_symbol;
+
+              return (
+                <tr key={p.id}>
+                  <td>
+                    <strong>{primaryName}</strong>
+                    {secondaryName && secondaryName.trim() !== primaryName.trim() && (
+                      <span className="hint" style={{ display: 'block', fontSize: 12 }}>
+                        {secondaryName}
+                      </span>
+                    )}
+                  </td>
+                  <td className="mono">{p.sku}</td>
+                  <td>{catName}</td>
+                  <td>
+                    {formatNumber(Number(p.stock_quantity))} {unitSymbol.toLowerCase()}
+                  </td>
+                  <td>{formatDate(p.deleted_at)}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      className="small-btn"
+                      disabled={busyId !== null}
+                      onClick={() => void handleRestore(p)}
+                    >
+                      {busyId === p.id ? t.common.restoring : t.common.restore}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {!loading && data?.items.length === 0 && (
               <tr>
                 <td colSpan={6} className="empty" style={{ textAlign: 'center', padding: '32px 0' }}>
-                  No archived products found.
+                  {t.archivedTab.empty}
                 </td>
               </tr>
             )}
@@ -178,10 +201,13 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
           disabled={loading || page <= 1}
           onClick={() => setPage((p) => Math.max(1, p - 1))}
         >
-          Previous
+          {t.common.previous}
         </button>
         <span className="result-count">
-          Page {page} of {totalPages}
+          {interpolate(t.common.pageOf, {
+            page: formatNumber(page),
+            total: formatNumber(totalPages),
+          })}
         </span>
         <button
           type="button"
@@ -189,7 +215,7 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
           disabled={loading || page >= totalPages}
           onClick={() => setPage((p) => p + 1)}
         >
-          Next
+          {t.common.next}
         </button>
       </div>
     </section>

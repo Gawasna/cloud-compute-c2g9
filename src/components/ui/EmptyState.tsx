@@ -1,4 +1,7 @@
+'use client';
+
 import React from 'react';
+import { useI18n } from '@/lib/i18n';
 
 export interface EmptyStateProps {
   message?: string;
@@ -9,12 +12,15 @@ export interface EmptyStateProps {
 }
 
 export default function EmptyState({
-  message = 'Không có dữ liệu phù hợp.',
+  message,
   icon = '◈',
   actionText,
   onAction,
   className = '',
 }: EmptyStateProps) {
+  const { locale } = useI18n();
+  const defaultMessage = locale === 'vi' ? 'Không có dữ liệu phù hợp.' : 'No matching data found.';
+
   return (
     <div
       className={`empty-state-container ${className}`.trim()}
@@ -25,7 +31,7 @@ export default function EmptyState({
       }}
     >
       <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.6 }}>{icon}</div>
-      <p style={{ margin: '0 0 12px', fontSize: '13px' }}>{message}</p>
+      <p style={{ margin: '0 0 12px', fontSize: '13px' }}>{message || defaultMessage}</p>
       {actionText && onAction && (
         <button
           type="button"

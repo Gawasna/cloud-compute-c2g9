@@ -13,10 +13,18 @@ export default async function Home() {
     redirect('/login');
   }
 
+  const locale = cookieStore.get('cloudstock_locale')?.value === 'en' ? 'en' : 'vi';
+
   return (
     <Suspense
       fallback={
-        <BrandSplashScreen message="Đang chuẩn bị không gian làm việc CloudStock…" />
+        <BrandSplashScreen
+          message={
+            locale === 'vi'
+              ? 'Đang chuẩn bị không gian làm việc CloudStock…'
+              : 'Preparing CloudStock workspace…'
+          }
+        />
       }
     >
       <AuthGate />

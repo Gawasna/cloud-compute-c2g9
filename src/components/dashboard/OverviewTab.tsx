@@ -1,6 +1,9 @@
+'use client';
+
 import React from 'react';
 import type { Role } from '@/components/layout/Sidebar';
 import { MetricCard, StockBadge, Skeleton } from '@/components/ui';
+import { useI18n } from '@/lib/i18n';
 import type { Product, ApiDashboard } from './types';
 
 export interface OverviewTabProps {
@@ -18,6 +21,8 @@ export default function OverviewTab({
   dashboardStats,
   onNavigateTab,
 }: OverviewTabProps) {
+  const { t, formatNumber, formatWeekday } = useI18n();
+
   const lowCount = products.filter((p) => p.stock > 0 && p.stock < p.minimum).length;
   const outCount = products.filter((p) => p.stock === 0).length;
   const inStockCount = Math.max(0, products.length - lowCount - outCount);
@@ -49,30 +54,30 @@ export default function OverviewTab({
         ) : (
           <>
             <MetricCard
-              title="Total Products"
-              value={products.length.toLocaleString('en-US')}
-              changeText="Managed catalog items"
+              title={t.overview.totalProducts}
+              value={formatNumber(products.length)}
+              changeText={t.overview.totalProductsSub}
               changeType="positive"
               icon="◈"
             />
             <MetricCard
-              title="Total Stock Units"
-              value={totalUnits.toLocaleString('en-US')}
-              changeText="Units currently on hand"
+              title={t.overview.totalStockUnits}
+              value={formatNumber(totalUnits)}
+              changeText={t.overview.totalStockUnitsSub}
               changeType="positive"
               icon="▤"
             />
             <MetricCard
-              title="Low Stock Alert"
-              value={lowCount}
-              changeText="Needs replenishment"
+              title={t.overview.lowStockAlert}
+              value={formatNumber(lowCount)}
+              changeText={t.overview.lowStockAlertSub}
               changeType="negative"
               icon="⚑"
             />
             <MetricCard
-              title="Out of Stock"
-              value={outCount}
-              changeText="Requires immediate action"
+              title={t.overview.outOfStock}
+              value={formatNumber(outCount)}
+              changeText={t.overview.outOfStockSub}
               changeType="negative"
               icon="⊘"
             />
@@ -84,20 +89,20 @@ export default function OverviewTab({
         <section className="panel chart-panel">
           <div className="panel-head">
             <div>
-              <h2>Movement Trends</h2>
-              <p>Inbound and outbound transaction quantities over the past 7 days</p>
+              <h2>{t.overview.movementTrends}</h2>
+              <p>{t.overview.movementTrendsSub}</p>
             </div>
-            <span className="pill">7 days</span>
+            <span className="pill">{t.overview.days7}</span>
           </div>
 
           <div className="legend">
             <span>
               <i className="dot purple" />
-              Inbound
+              {t.common.inbound}
             </span>
             <span>
               <i className="dot coral" />
-              Outbound
+              {t.common.outbound}
             </span>
           </div>
 
@@ -107,18 +112,18 @@ export default function OverviewTab({
               day.setDate(day.getDate() - 6 + i);
               const sameDay = (v: string) =>
                 new Date(v).toDateString() === day.toDateString();
-              const daily = (dashboardStats?.history || []).filter((t) =>
-                sameDay(t.day)
+              const daily = (dashboardStats?.history || []).filter((tItem) =>
+                sameDay(tItem.day)
               );
               const ins = daily
-                .filter((t) => t.type === 'IN')
-                .reduce((s, t) => s + Number(t.quantity), 0);
+                .filter((tItem) => tItem.type === 'IN')
+                .reduce((s, tItem) => s + Number(tItem.quantity), 0);
               const outs = daily
-                .filter((t) => t.type === 'OUT')
-                .reduce((s, t) => s + Number(t.quantity), 0);
+                .filter((tItem) => tItem.type === 'OUT')
+                .reduce((s, tItem) => s + Number(tItem.quantity), 0);
               const max = Math.max(
                 25,
-                ...(dashboardStats?.history || []).map((t) => Number(t.quantity))
+                ...(dashboardStats?.history || []).map((tItem) => Number(tItem.quantity))
               );
 
               return (
@@ -126,17 +131,17 @@ export default function OverviewTab({
                   <div className="bars">
                     <span
                       className="bar bar-in"
-                      title={`Inbound ${ins}`}
+                      title={`${t.common.inbound} ${ins}`}
                       style={{ height: `${Math.max(4, (ins / max) * 100)}%` }}
                     />
                     <span
                       className="bar bar-out"
-                      title={`Outbound ${outs}`}
+                      title={`${t.common.outbound} ${outs}`}
                       style={{ height: `${Math.max(4, (outs / max) * 100)}%` }}
                     />
                   </div>
                   <small>
-                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                    {formatWeekday(day)}
                   </small>
                 </div>
               );
@@ -147,8 +152,8 @@ export default function OverviewTab({
         <section className="panel alerts-panel">
           <div className="panel-head">
             <div>
-              <h2>Stock Distribution</h2>
-              <p>Inventory level categorization</p>
+              <h2>{t.overview.stockDistribution}</h2>
+              <p>{t.overview.stockDistributionSub}</p>
             </div>
           </div>
 
@@ -159,23 +164,23 @@ export default function OverviewTab({
             }}
           >
             <div>
-              <b>{products.length}</b>
-              <span>items</span>
+              <b>{formatNumber(products.length)}</b>
+              <span>{t.common.items}</span>
             </div>
           </div>
 
           <div className="donut-legend">
             <div>
               <i className="dot green" />
-              In Stock <strong>{inStockCount}</strong>
+              {t.common.inStock} <strong>{formatNumber(inStockCount)}</strong>
             </div>
             <div>
               <i className="dot coral" />
-              Low Stock <strong>{lowCount}</strong>
+              {t.common.lowStock} <strong>{formatNumber(lowCount)}</strong>
             </div>
             <div>
               <i className="dot gray" />
-              Out of Stock <strong>{outCount}</strong>
+              {t.common.outOfStock} <strong>{formatNumber(outCount)}</strong>
             </div>
           </div>
         </section>
@@ -184,15 +189,15 @@ export default function OverviewTab({
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Product Catalog</h2>
-            <p>Latest stock inventory records</p>
+            <h2>{t.overview.catalogTitle}</h2>
+            <p>{t.overview.catalogSub}</p>
           </div>
           <button
             type="button"
             className="btn secondary"
             onClick={() => onNavigateTab(role === 'viewer' ? 'reports' : 'products')}
           >
-            {role === 'viewer' ? 'View Reports' : 'View All'} ↗
+            {role === 'viewer' ? t.overview.viewReports : t.overview.viewAll} ↗
           </button>
         </div>
 
@@ -200,12 +205,12 @@ export default function OverviewTab({
           <table>
             <thead>
               <tr>
-                <th>Product Name</th>
-                <th>SKU</th>
-                <th>Category</th>
-                <th>Stock</th>
-                <th>Threshold</th>
-                <th>Status</th>
+                <th>{t.common.productName}</th>
+                <th>{t.common.sku}</th>
+                <th>{t.common.category}</th>
+                <th>{t.common.stock}</th>
+                <th>{t.common.threshold}</th>
+                <th>{t.common.status}</th>
               </tr>
             </thead>
             <tbody>
@@ -220,9 +225,9 @@ export default function OverviewTab({
                   <td className="mono">{p.sku}</td>
                   <td>{p.category}</td>
                   <td>
-                    {p.stock.toLocaleString('en-US')} {p.unit.toLowerCase()}
+                    {formatNumber(p.stock)} {p.unit.toLowerCase()}
                   </td>
-                  <td>{p.minimum}</td>
+                  <td>{formatNumber(p.minimum)}</td>
                   <td>
                     <StockBadge stock={p.stock} minimum={p.minimum} />
                   </td>
@@ -231,7 +236,7 @@ export default function OverviewTab({
               {recentProducts.length === 0 && (
                 <tr>
                   <td colSpan={6} className="empty">
-                    {loading ? 'Loading catalog items...' : 'No products found in warehouse.'}
+                    {loading ? t.overview.loadingCatalog : t.overview.noProducts}
                   </td>
                 </tr>
               )}
