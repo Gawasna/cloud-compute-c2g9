@@ -5,6 +5,17 @@ Format follows [Conventional Commits](https://www.conventionalcommits.org/) and 
 
 ---
 
+## [Unreleased]
+
+### Operations / Watchdog
+- Cloudflare Worker Watchdog (`workers/cloud-watchdog`) with Edge Cron Trigger (10m) for $0 keep-alive & downtime monitoring (TASK-20261115-0001)
+- Automatic transient cold-start absorption (2s retry) and Telegram HTML alert dispatcher (TASK-20261115-0001)
+- Telegram Slash Commands (`/status`, `/ping`, `/help`) via Edge Webhook with chat ID whitelisting (TASK-20261115-0001)
+- Relax GitHub Actions cron schedule (`.github/workflows/heartbeat-cron.yml`) to 6h tertiary fallback to prevent runner queue starvation (TASK-20261115-0001)
+- Local operations runbook (`RUNBOOK.local.md`) for operator-driven deployment without credentials in repo (TASK-20261115-0001)
+
+---
+
 ## [v0.2.0] - 2026-11-09
 
 ### Features
