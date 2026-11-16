@@ -18,9 +18,10 @@ describe("Security: HTTP security headers", () => {
   });
   it("connect-src only whitelists Supabase + telemetry origins (invalid DSNs ignored)", () => {
     const connect = buildContentSecurityPolicy(env).split("; ").find((d) => d.startsWith("connect-src"));
-    assert.ok(connect.includes("https://abc.supabase.co"));
-    assert.ok(connect.includes("http://127.0.0.1:35800"));
-    assert.ok(!connect.includes("not a url"));
+    const connectTokens = new Set(connect.split(" "));
+    assert.equal(connectTokens.has("https://abc.supabase.co"), true);
+    assert.equal(connectTokens.has("http://127.0.0.1:35800"), true);
+    assert.equal(connectTokens.has("not a url"), false);
     assert.ok(!/connect-src[^;]*\s\*(\s|$)/.test(connect));
   });
   it("sets the standard hardening headers, HSTS only in production", () => {
@@ -44,9 +45,11 @@ describe("Security: HTTP security headers", () => {
     const defaultCsp = buildContentSecurityPolicy(env);
     const defaultImg = defaultCsp.split("; ").find((d) => d.startsWith("img-src"));
     const defaultConnect = defaultCsp.split("; ").find((d) => d.startsWith("connect-src"));
+    const defaultImgTokens = new Set(defaultImg.split(" "));
+    const defaultConnectTokens = new Set(defaultConnect.split(" "));
 
-    assert.ok(defaultImg.includes("https://cc-media-worker.hunglepy05.workers.dev"));
-    assert.ok(defaultConnect.includes("https://cc-media-worker.hunglepy05.workers.dev"));
+    assert.equal(defaultImgTokens.has("https://cc-media-worker.hunglepy05.workers.dev"), true);
+    assert.equal(defaultConnectTokens.has("https://cc-media-worker.hunglepy05.workers.dev"), true);
     assert.ok(!/img-src[^;]*\s\*(\s|$)/.test(defaultImg), "img-src must not contain universal wildcard *");
     assert.ok(!/connect-src[^;]*\s\*(\s|$)/.test(defaultConnect), "connect-src must not contain universal wildcard *");
 
@@ -56,9 +59,12 @@ describe("Security: HTTP security headers", () => {
     });
     const customImg = customCsp.split("; ").find((d) => d.startsWith("img-src"));
     const customConnect = customCsp.split("; ").find((d) => d.startsWith("connect-src"));
-    assert.ok(customImg.includes("https://cdn.example.com"));
-    assert.ok(customConnect.includes("https://cdn.example.com"));
-    assert.ok(!customImg.includes("invalid-url"));
+    const customImgTokens = new Set(customImg.split(" "));
+    const customConnectTokens = new Set(customConnect.split(" "));
+
+    assert.equal(customImgTokens.has("https://cdn.example.com"), true);
+    assert.equal(customConnectTokens.has("https://cdn.example.com"), true);
+    assert.equal(customImgTokens.has("invalid-url"), false);
     assert.ok(!/img-src[^;]*\s\*(\s|$)/.test(customImg));
     assert.ok(!/connect-src[^;]*\s\*(\s|$)/.test(customConnect));
   });
