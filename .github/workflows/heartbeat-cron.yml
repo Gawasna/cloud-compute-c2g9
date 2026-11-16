@@ -4,8 +4,9 @@ name: Cloud Heartbeat & Keep-Alive Watchdog
 # Part of Dual Independent Watchdogs architecture (Issue #9, DIAGRAM-D9-AVAILABILITY).
 on:
   schedule:
-    # Trigger every 30 minutes to maintain Supabase keep-alive without exhausting runner quotas.
-    - cron: '*/30 * * * *'
+    # Relaxed to every 6 hours (at minute 23) as tertiary fallback.
+    # Primary cloud watchdog and keep-alive is delegated to Cloudflare Worker (workers/cloud-watchdog).
+    - cron: '23 */6 * * *'
   workflow_dispatch:
     inputs:
       target_url:

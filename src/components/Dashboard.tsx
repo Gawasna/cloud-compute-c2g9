@@ -26,6 +26,7 @@ import {
 
 import OverviewTab from './dashboard/OverviewTab';
 import ProductsTab from './dashboard/ProductsTab';
+import ArchivedProductsTab from './dashboard/ArchivedProductsTab';
 import CategoriesTab from './dashboard/CategoriesTab';
 import StockMovementTab from './dashboard/StockMovementTab';
 import TransactionsTab from './dashboard/TransactionsTab';
@@ -38,9 +39,9 @@ export interface DashboardProps {
 }
 
 const ROLE_DISPLAY_NAMES: Record<string, string> = {
-  admin: 'Quản trị viên',
-  staff: 'Nhân viên kho',
-  viewer: 'Người xem báo cáo',
+  admin: 'Administrator',
+  staff: 'Warehouse Staff',
+  viewer: 'Report Viewer',
 };
 
 function DashboardContent({ identity }: DashboardProps) {
@@ -110,14 +111,14 @@ function DashboardContent({ identity }: DashboardProps) {
 
       if (list.total > list.items.length) {
         setDataError(
-          `Đang hiển thị ${list.items.length}/${list.total} sản phẩm. Cần bổ sung phân trang để xem toàn bộ danh mục.`
+          `Showing ${list.items.length}/${list.total} products. Add pagination to view full catalog.`
         );
       }
     } catch (err) {
       setDataError(
         err instanceof Error
           ? err.message
-          : 'Không thể tải dữ liệu hệ thống. Vui lòng thử lại.'
+          : 'Unable to load system data. Please try again.'
       );
     } finally {
       setLoading(false);
@@ -146,7 +147,7 @@ function DashboardContent({ identity }: DashboardProps) {
         );
         if (list.total > list.items.length) {
           setDataError(
-            `Đang hiển thị ${list.items.length}/${list.total} sản phẩm. Cần bổ sung phân trang để xem toàn bộ danh mục.`
+            `Showing ${list.items.length}/${list.total} products. Add pagination to view full catalog.`
           );
         }
         setLoading(false);
@@ -156,7 +157,7 @@ function DashboardContent({ identity }: DashboardProps) {
         setDataError(
           err instanceof Error
             ? err.message
-            : 'Không thể tải dữ liệu hệ thống. Vui lòng thử lại.'
+            : 'Unable to load system data. Please try again.'
         );
         setLoading(false);
       });
@@ -194,23 +195,24 @@ function DashboardContent({ identity }: DashboardProps) {
   const handleDeleteProduct = withClientHandler(
     async (prod: Product) => {
       if (role !== 'admin') return;
-      if (!window.confirm(`Bạn có chắc chắn muốn xóa sản phẩm "${prod.name}" (${prod.sku})?`)) {
+      if (!window.confirm(`Are you sure you want to delete "${prod.name}" (${prod.sku})?`)) {
         return;
       }
       await apiRequest(`/products/${prod.id}`, { method: 'DELETE' });
       await refreshData();
-      showToast('Đã xóa sản phẩm thành công.');
+      showToast('Product removed successfully.');
     },
     {
       source: 'dashboard.delete_product',
       showToast,
-      onError: (err) => setDataError(err.message || 'Không thể xóa sản phẩm đã chọn.'),
+      onError: (err) => setDataError(err.message || 'Unable to delete selected product.'),
     }
   );
 
   const handleSaveProduct = withClientHandler(
     async (data: {
       name: string;
+      nameEn?: string;
       sku: string;
       categoryId: string;
       unitId: string;
@@ -226,6 +228,7 @@ function DashboardContent({ identity }: DashboardProps) {
         method: isEdit ? 'PATCH' : 'POST',
         body: JSON.stringify({
           name: data.name,
+          nameEn: data.nameEn,
           sku: data.sku,
           categoryId: data.categoryId,
           unitId: data.unitId,
@@ -235,12 +238,12 @@ function DashboardContent({ identity }: DashboardProps) {
       });
 
       await refreshData();
-      showToast(isEdit ? 'Đã cập nhật sản phẩm thành công.' : 'Đã thêm sản phẩm thành công.');
+      showToast(isEdit ? 'Product updated successfully.' : 'Product added successfully.');
     },
     {
       source: 'dashboard.save_product',
       showToast,
-      onError: (err) => setDataError(err.message || 'Không thể lưu sản phẩm.'),
+      onError: (err) => setDataError(err.message || 'Unable to save product.'),
     }
   );
 
@@ -270,12 +273,12 @@ function DashboardContent({ identity }: DashboardProps) {
       });
 
       await refreshData();
-      showToast('Đã lưu phiếu nhập / xuất kho thành công.');
+      showToast('Stock movement recorded successfully.');
     },
     {
       source: 'dashboard.save_stock_ticket',
       showToast,
-      onError: (err) => setDataError(err.message || 'Không thể lưu phiếu nhập / xuất kho.'),
+      onError: (err) => setDataError(err.message || 'Unable to record stock movement.'),
     }
   );
 
@@ -296,7 +299,7 @@ function DashboardContent({ identity }: DashboardProps) {
             className="small-btn"
             onClick={() => void refreshData()}
           >
-            Tải lại
+            Reload
           </button>
         </div>
       )}
@@ -323,6 +326,12 @@ function DashboardContent({ identity }: DashboardProps) {
             onDeleteProduct={handleDeleteProduct}
             onCreateStockTicket={handleOpenStockTicket}
           />
+        </SafeBoundary>
+      )}
+
+      {page === 'archived' && role === 'admin' && (
+        <SafeBoundary name="ArchivedProductsTab">
+          <ArchivedProductsTab onRestored={refreshData} />
         </SafeBoundary>
       )}
 
@@ -388,7 +397,7 @@ function DashboardContent({ identity }: DashboardProps) {
 
 export default function Dashboard(props: DashboardProps) {
   return (
-    <Suspense fallback={<div className="panel" style={{ padding: 24 }}>Đang nạp không gian làm việc…</div>}>
+    <Suspense fallback={<div className="panel" style={{ padding: 24 }}>Loading workspace…</div>}>
       <DashboardContent {...props} />
     </Suspense>
   );

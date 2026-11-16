@@ -1,5 +1,9 @@
+'use client';
+
 import React from 'react';
-import { StockBadge } from '@/components/ui';
+import { StockBadge, ProductImage } from '@/components/ui';
+import { PlusIcon } from '@/components/ui/Icons';
+import { useI18n } from '@/lib/i18n';
 import type { Product } from './types';
 
 export interface StockMovementTabProps {
@@ -11,30 +15,28 @@ export default function StockMovementTab({
   products,
   onCreateTicket,
 }: StockMovementTabProps) {
-  const getCategoryIcon = (category: string) => {
-    if (category === 'Điện tử') return '⌁';
-    if (category === 'Gia dụng') return '▤';
-    return '▣';
-  };
+  const { t, formatNumber } = useI18n();
 
   return (
     <>
       <div className="inline-heading">
-        <p>Ghi nhận phiếu nhập và xuất, tự động cập nhật số lượng tồn kho và lịch sử giao dịch.</p>
+        <p>{t.stockTab.intro}</p>
         <button
           type="button"
           className="btn primary"
           onClick={onCreateTicket}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
-          ＋ Tạo phiếu nhập / xuất
+          <PlusIcon size={16} />
+          <span>{t.stockTab.createBtn}</span>
         </button>
       </div>
 
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Tồn kho hiện tại</h2>
-            <p>Đối chiếu số lượng tồn thực tế trước khi xuất hoặc nhập hàng</p>
+            <h2>{t.stockTab.panelTitle}</h2>
+            <p>{t.stockTab.panelDesc}</p>
           </div>
         </div>
 
@@ -42,12 +44,12 @@ export default function StockMovementTab({
           <table>
             <thead>
               <tr>
-                <th>Tên sản phẩm</th>
-                <th>Mã SKU</th>
-                <th>Danh mục</th>
-                <th>Tồn kho</th>
-                <th>Ngưỡng</th>
-                <th>Trạng thái</th>
+                <th>{t.common.productName}</th>
+                <th>{t.common.sku}</th>
+                <th>{t.common.category}</th>
+                <th>{t.common.stock}</th>
+                <th>{t.common.threshold}</th>
+                <th>{t.common.status}</th>
               </tr>
             </thead>
             <tbody>
@@ -55,16 +57,23 @@ export default function StockMovementTab({
                 <tr key={p.id}>
                   <td>
                     <div className="item-name">
-                      <span className="item-avatar">{getCategoryIcon(p.category)}</span>
-                      <strong>{p.name}</strong>
+                      <ProductImage alt={p.name} category={p.category} size="md" />
+                      <div>
+                        <strong>{p.name}</strong>
+                        {p.nameOriginal && p.nameOriginal !== p.name && (
+                          <span className="product-subtitle">
+                            {p.nameOriginal}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="mono">{p.sku}</td>
                   <td>{p.category}</td>
                   <td>
-                    {p.stock.toLocaleString('vi-VN')} {p.unit.toLowerCase()}
+                    {formatNumber(p.stock)} {p.unit.toLowerCase()}
                   </td>
-                  <td>{p.minimum}</td>
+                  <td>{formatNumber(p.minimum)}</td>
                   <td>
                     <StockBadge stock={p.stock} minimum={p.minimum} />
                   </td>
@@ -73,7 +82,7 @@ export default function StockMovementTab({
               {products.length === 0 && (
                 <tr>
                   <td colSpan={6} className="empty">
-                    Chưa có sản phẩm nào trong kho.
+                    {t.overview.noProducts}
                   </td>
                 </tr>
               )}

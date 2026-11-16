@@ -68,6 +68,12 @@ specs/
 !CHANGELOG.md
 !README.md
 
+# Local Operations Runbooks & Worker Local Secrets (non-committed)
+*.local.md
+workers/**/RUNBOOK*.md
+workers/**/.dev.vars
+
+
 # Syncthing
 .stversions/
 .stignore
@@ -76,9 +82,12 @@ specs/
 scripts/ops/**/data/
 scripts/ops/**/.env
 
+# Cloudflare Workers
+.wrangler/
+workers/**/.wrangler/
+
 # Binary presentations
 *.pptx
-\
+
 # Python
 /__pycache__/
-scripts/

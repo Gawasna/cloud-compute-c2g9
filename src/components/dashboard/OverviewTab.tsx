@@ -1,6 +1,24 @@
-import React from 'react';
+'use client';
+
+import React, { useMemo, useState } from 'react';
 import type { Role } from '@/components/layout/Sidebar';
-import { MetricCard, StockBadge, Skeleton } from '@/components/ui';
+import {
+  StockBadge,
+  Skeleton,
+  TableSkeleton,
+  ChartSkeleton,
+  ProductImage,
+} from '@/components/ui';
+import {
+  PackageIcon,
+  ArchiveIcon,
+  AlertTriangleIcon,
+  BanIcon,
+  ExternalLinkIcon,
+  ChevronDownIcon,
+} from '@/components/ui/Icons';
+import { MovementTrendChart, StockDistributionChart } from '@/components/charts';
+import { useI18n } from '@/lib/i18n';
 import type { Product, ApiDashboard } from './types';
 
 export interface OverviewTabProps {
@@ -18,6 +36,10 @@ export default function OverviewTab({
   dashboardStats,
   onNavigateTab,
 }: OverviewTabProps) {
+  const { t, locale, formatNumber, formatWeekday } = useI18n();
+  const [periodDays, setPeriodDays] = useState<7 | 14 | 30>(7);
+  const [movementType, setMovementType] = useState<'all' | 'in' | 'out'>('all');
+
   const lowCount = products.filter((p) => p.stock > 0 && p.stock < p.minimum).length;
   const outCount = products.filter((p) => p.stock === 0).length;
   const inStockCount = Math.max(0, products.length - lowCount - outCount);
@@ -25,14 +47,35 @@ export default function OverviewTab({
 
   const recentProducts = products.slice(0, 6);
 
-  const donutInStockPercent = products.length ? (inStockCount / products.length) * 100 : 0;
-  const donutLowPercent = products.length ? ((inStockCount + lowCount) / products.length) * 100 : 0;
+  const movementTrendPoints = useMemo(() => {
+    return Array.from({ length: periodDays }, (_, i) => {
+      const day = new Date();
+      day.setDate(day.getDate() - (periodDays - 1) + i);
+      const sameDay = (v: string) =>
+        new Date(v).toDateString() === day.toDateString();
+      const daily = (dashboardStats?.history || []).filter((tItem) =>
+        sameDay(tItem.day)
+      );
+      const ins = daily
+        .filter((tItem) => tItem.type === 'IN')
+        .reduce((s, tItem) => s + Number(tItem.quantity), 0);
+      const outs = daily
+        .filter((tItem) => tItem.type === 'OUT')
+        .reduce((s, tItem) => s + Number(tItem.quantity), 0);
 
-  const getCategoryIcon = (category: string) => {
-    if (category === 'Điện tử') return '⌁';
-    if (category === 'Gia dụng') return '▤';
-    return '▣';
-  };
+      const label =
+        periodDays === 7
+          ? formatWeekday(day)
+          : `${day.getDate()}/${day.getMonth() + 1}`;
+
+      return {
+        period: day.toISOString(),
+        label,
+        inbound: movementType === 'out' ? 0 : ins,
+        outbound: movementType === 'in' ? 0 : outs,
+      };
+    });
+  }, [dashboardStats?.history, formatWeekday, periodDays, movementType]);
 
   return (
     <>
@@ -46,34 +89,38 @@ export default function OverviewTab({
           </>
         ) : (
           <>
-            <MetricCard
-              title="Tổng sản phẩm"
-              value={products.length.toLocaleString('vi-VN')}
-              changeText="Danh mục đang quản lý"
-              changeType="positive"
-              icon="◈"
-            />
-            <MetricCard
-              title="Tổng đơn vị tồn"
-              value={totalUnits.toLocaleString('vi-VN')}
-              changeText="Đang có trong kho"
-              changeType="positive"
-              icon="▤"
-            />
-            <MetricCard
-              title="Sắp hết hàng"
-              value={lowCount}
-              changeText="Cần nhập thêm"
-              changeType="negative"
-              icon="⚑"
-            />
-            <MetricCard
-              title="Đã hết hàng"
-              value={outCount}
-              changeText="Cần xử lý"
-              changeType="negative"
-              icon="⊘"
-            />
+            <div className="metric">
+              <span>{t.overview.totalProducts}</span>
+              <b>{formatNumber(products.length)}</b>
+              <small className="change positive">{t.overview.totalProductsSub}</small>
+              <span className="metric-icon">
+                <PackageIcon size={20} />
+              </span>
+            </div>
+            <div className="metric">
+              <span>{t.overview.totalStockUnits}</span>
+              <b>{formatNumber(totalUnits)}</b>
+              <small className="change positive">{t.overview.totalStockUnitsSub}</small>
+              <span className="metric-icon">
+                <ArchiveIcon size={20} />
+              </span>
+            </div>
+            <div className="metric">
+              <span>{t.overview.lowStockAlert}</span>
+              <b>{formatNumber(lowCount)}</b>
+              <small className="change negative">{t.overview.lowStockAlertSub}</small>
+              <span className="metric-icon">
+                <AlertTriangleIcon size={20} />
+              </span>
+            </div>
+            <div className="metric">
+              <span>{t.overview.outOfStock}</span>
+              <b>{formatNumber(outCount)}</b>
+              <small className="change negative">{t.overview.outOfStockSub}</small>
+              <span className="metric-icon">
+                <BanIcon size={20} />
+              </span>
+            </div>
           </>
         )}
       </div>
@@ -82,160 +129,158 @@ export default function OverviewTab({
         <section className="panel chart-panel">
           <div className="panel-head">
             <div>
-              <h2>Biến động nhập xuất</h2>
-              <p>Số lượng nhập và xuất kho trong 7 ngày gần nhất</p>
+              <h2>{t.overview.movementTrends}</h2>
+              <p>{t.overview.movementTrendsSub}</p>
             </div>
-            <span className="pill">7 ngày</span>
+            <div className="trend-filter-select-wrapper">
+              <select
+                value={periodDays}
+                onChange={(e) => setPeriodDays(Number(e.target.value) as 7 | 14 | 30)}
+                className="trend-filter-select"
+                aria-label={locale === 'vi' ? 'Chọn khoảng thời gian xu hướng' : 'Select trend period'}
+              >
+                <option value={7}>{locale === 'vi' ? '7 ngày' : '7 Days'}</option>
+                <option value={14}>{locale === 'vi' ? '14 ngày' : '14 Days'}</option>
+                <option value={30}>{locale === 'vi' ? '30 ngày' : '30 Days'}</option>
+              </select>
+              <span className="trend-filter-chevron">
+                <ChevronDownIcon size={13} />
+              </span>
+            </div>
           </div>
 
           <div className="legend">
-            <span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={() => setMovementType((curr) => (curr === 'in' ? 'all' : 'in'))}
+              style={{
+                cursor: 'pointer',
+                opacity: movementType === 'out' ? 0.35 : 1,
+                fontWeight: movementType === 'in' ? 700 : 500,
+                transition: 'all 0.15s ease',
+                userSelect: 'none',
+              }}
+              title={locale === 'vi' ? 'Nhấn để lọc Nhập kho' : 'Click to filter Inbound'}
+            >
               <i className="dot purple" />
-              Nhập kho
+              {t.common.inbound}
             </span>
-            <span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={() => setMovementType((curr) => (curr === 'out' ? 'all' : 'out'))}
+              style={{
+                cursor: 'pointer',
+                opacity: movementType === 'in' ? 0.35 : 1,
+                fontWeight: movementType === 'out' ? 700 : 500,
+                transition: 'all 0.15s ease',
+                userSelect: 'none',
+              }}
+              title={locale === 'vi' ? 'Nhấn để lọc Xuất kho' : 'Click to filter Outbound'}
+            >
               <i className="dot coral" />
-              Xuất kho
+              {t.common.outbound}
             </span>
           </div>
 
-          <div className="chart">
-            {Array.from({ length: 7 }, (_, i) => {
-              const day = new Date();
-              day.setDate(day.getDate() - 6 + i);
-              const sameDay = (v: string) =>
-                new Date(v).toDateString() === day.toDateString();
-              const daily = (dashboardStats?.history || []).filter((t) =>
-                sameDay(t.day)
-              );
-              const ins = daily
-                .filter((t) => t.type === 'IN')
-                .reduce((s, t) => s + Number(t.quantity), 0);
-              const outs = daily
-                .filter((t) => t.type === 'OUT')
-                .reduce((s, t) => s + Number(t.quantity), 0);
-              const max = Math.max(
-                25,
-                ...(dashboardStats?.history || []).map((t) => Number(t.quantity))
-              );
-
-              return (
-                <div className="chart-col" key={day.toISOString()}>
-                  <div className="bars">
-                    <span
-                      className="bar bar-in"
-                      title={`Nhập ${ins}`}
-                      style={{ height: `${Math.max(4, (ins / max) * 100)}%` }}
-                    />
-                    <span
-                      className="bar bar-out"
-                      title={`Xuất ${outs}`}
-                      style={{ height: `${Math.max(4, (outs / max) * 100)}%` }}
-                    />
-                  </div>
-                  <small>
-                    {day.toLocaleDateString('vi-VN', { weekday: 'short' })}
-                  </small>
-                </div>
-              );
-            })}
-          </div>
+          {loading ? (
+            <ChartSkeleton height={220} type="bar" />
+          ) : (
+            <MovementTrendChart
+              data={movementTrendPoints}
+              height={220}
+              emptyText={t.overview.noProducts || 'No transaction history in this period'}
+            />
+          )}
         </section>
 
         <section className="panel alerts-panel">
           <div className="panel-head">
             <div>
-              <h2>Cảnh báo tồn kho</h2>
-              <p>Phân loại tình trạng sản phẩm</p>
+              <h2>{t.overview.stockDistribution}</h2>
+              <p>{t.overview.stockDistributionSub}</p>
             </div>
           </div>
 
-          <div
-            className="donut"
-            style={{
-              background: `conic-gradient(#65bf92 0 ${donutInStockPercent}%, #ff9b93 ${donutInStockPercent}% ${donutLowPercent}%, #a9a9bd ${donutLowPercent}% 100%)`,
-            }}
-          >
-            <div>
-              <b>{products.length}</b>
-              <span>sản phẩm</span>
-            </div>
-          </div>
-
-          <div className="donut-legend">
-            <div>
-              <i className="dot green" />
-              Còn hàng <strong>{inStockCount}</strong>
-            </div>
-            <div>
-              <i className="dot coral" />
-              Sắp hết <strong>{lowCount}</strong>
-            </div>
-            <div>
-              <i className="dot gray" />
-              Hết hàng <strong>{outCount}</strong>
-            </div>
-          </div>
+          {loading ? (
+            <ChartSkeleton height={230} type="donut" />
+          ) : (
+            <StockDistributionChart
+              inStockCount={inStockCount}
+              lowStockCount={lowCount}
+              outOfStockCount={outCount}
+              totalProducts={products.length}
+              height={180}
+              showLegend={true}
+            />
+          )}
         </section>
       </div>
 
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Danh sách sản phẩm</h2>
-            <p>Tình trạng hàng hóa mới nhất trong kho</p>
+            <h2>{t.overview.catalogTitle}</h2>
+            <p>{t.overview.catalogSub}</p>
           </div>
           <button
             type="button"
             className="btn secondary"
             onClick={() => onNavigateTab(role === 'viewer' ? 'reports' : 'products')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            {role === 'viewer' ? 'Xem báo cáo' : 'Xem tất cả'} ↗
+            <span>{role === 'viewer' ? t.overview.viewReports : t.overview.viewAll}</span>
+            <ExternalLinkIcon size={14} />
           </button>
         </div>
 
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Tên sản phẩm</th>
-                <th>Mã SKU</th>
-                <th>Danh mục</th>
-                <th>Tồn kho</th>
-                <th>Ngưỡng</th>
-                <th>Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentProducts.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <div className="item-name">
-                      <span className="item-avatar">{getCategoryIcon(p.category)}</span>
-                      <strong>{p.name}</strong>
-                    </div>
-                  </td>
-                  <td className="mono">{p.sku}</td>
-                  <td>{p.category}</td>
-                  <td>
-                    {p.stock.toLocaleString('vi-VN')} {p.unit.toLowerCase()}
-                  </td>
-                  <td>{p.minimum}</td>
-                  <td>
-                    <StockBadge stock={p.stock} minimum={p.minimum} />
-                  </td>
-                </tr>
-              ))}
-              {recentProducts.length === 0 && (
+        {loading ? (
+          <TableSkeleton rows={4} cols={6} />
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={6} className="empty">
-                    {loading ? 'Đang tải danh sách sản phẩm...' : 'Chưa có sản phẩm nào trong kho.'}
-                  </td>
+                  <th>{t.common.productName}</th>
+                  <th>{t.common.sku}</th>
+                  <th>{t.common.category}</th>
+                  <th>{t.common.stock}</th>
+                  <th>{t.common.threshold}</th>
+                  <th>{t.common.status}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {recentProducts.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <div className="item-name">
+                        <ProductImage alt={p.name} category={p.category} size="sm" />
+                        <strong>{p.name}</strong>
+                      </div>
+                    </td>
+                    <td className="mono">{p.sku}</td>
+                    <td>{p.category}</td>
+                    <td>
+                      {formatNumber(p.stock)} {p.unit.toLowerCase()}
+                    </td>
+                    <td>{formatNumber(p.minimum)}</td>
+                    <td>
+                      <StockBadge stock={p.stock} minimum={p.minimum} />
+                    </td>
+                  </tr>
+                ))}
+                {recentProducts.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="empty">
+                      {t.overview.noProducts}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </>
   );

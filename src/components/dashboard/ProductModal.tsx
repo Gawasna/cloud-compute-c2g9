@@ -1,5 +1,8 @@
+'use client';
+
 import React, { useState } from 'react';
-import { Modal } from '@/components/ui';
+import { Modal, ProductImage } from '@/components/ui';
+import { useI18n } from '@/lib/i18n';
 import type { ApiCategory, ApiUnit, Product } from './types';
 
 export interface ProductModalProps {
@@ -7,6 +10,7 @@ export interface ProductModalProps {
   onClose: () => void;
   onSave: (productData: {
     name: string;
+    nameEn?: string;
     sku: string;
     categoryId: string;
     unitId: string;
@@ -28,13 +32,21 @@ export default function ProductModal({
   units,
   editProduct,
 }: ProductModalProps) {
-  const [name, setName] = useState(editProduct ? editProduct.name : '');
+  const { t, locale } = useI18n();
+
+  const initialName = editProduct ? (editProduct.nameOriginal || editProduct.name) : '';
+  const initialNameEn = editProduct ? (editProduct.nameEn || '') : '';
+  const isInitiallySame = Boolean(initialName && initialNameEn && initialName === initialNameEn);
+
+  const [name, setName] = useState(initialName);
+  const [nameEn, setNameEn] = useState(initialNameEn);
+  const [nameAlreadyEnglish, setNameAlreadyEnglish] = useState(isInitiallySame);
   const [sku, setSku] = useState(editProduct ? editProduct.sku : '');
-  const [categoryName, setCategoryName] = useState(
-    editProduct ? editProduct.category : categories[0]?.name || ''
+  const [categoryId, setCategoryId] = useState(
+    editProduct?.categoryId || categories[0]?.id || ''
   );
-  const [unitSymbol, setUnitSymbol] = useState(
-    editProduct ? editProduct.unit : units[0]?.symbol || ''
+  const [unitId, setUnitId] = useState(
+    editProduct?.unitId || units[0]?.id || ''
   );
   const [price, setPrice] = useState(
     editProduct ? String(editProduct.price) : '0'
@@ -48,17 +60,25 @@ export default function ProductModal({
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const toggleNameAlreadyEnglish = (checked: boolean) => {
+    setNameAlreadyEnglish(checked);
+    if (checked) {
+      setNameEn(name);
+    }
+  };
+
   const handleConfirm = async () => {
     const trimmedName = name.trim();
+    const trimmedNameEn = (nameAlreadyEnglish ? trimmedName : nameEn.trim()) || trimmedName;
     const trimmedSku = sku.trim().toUpperCase();
-    const targetCategory = categories.find((c) => c.name === categoryName);
-    const targetUnit = units.find((u) => u.symbol === unitSymbol);
+    const targetCategory = categories.find((c) => c.id === categoryId) || categories[0];
+    const targetUnit = units.find((u) => u.id === unitId) || units[0];
     const numPrice = Number(price);
     const numMinimum = Number(minimum);
     const numStock = Number(stock);
 
     if (!trimmedName || !trimmedSku || !targetCategory || !targetUnit) {
-      setError('Vui lòng nhập đầy đủ tên sản phẩm, mã SKU và chọn danh mục, đơn vị tính.');
+      setError(t.productModal.errRequired);
       return;
     }
 
@@ -70,14 +90,12 @@ export default function ProductModal({
       !Number.isInteger(numStock) ||
       numStock < 0
     ) {
-      setError('Giá vốn và số lượng phải là số không âm hợp lệ.');
+      setError(t.productModal.errNumbers);
       return;
     }
 
     if (!editProduct && numStock > 0) {
-      setError(
-        'Sản phẩm mới phải có số lượng tồn ban đầu bằng 0. Sau khi tạo, hãy lập phiếu nhập kho để ghi nhận tồn và lịch sử giao dịch.'
-      );
+      setError(t.productModal.errInitialStock);
       return;
     }
 
@@ -87,6 +105,7 @@ export default function ProductModal({
     try {
       await onSave({
         name: trimmedName,
+        nameEn: trimmedNameEn,
         sku: trimmedSku,
         categoryId: targetCategory.id,
         unitId: targetUnit.id,
@@ -97,7 +116,7 @@ export default function ProductModal({
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lưu sản phẩm thất bại.');
+      setError(err instanceof Error ? err.message : t.productModal.errSave);
     } finally {
       setSaving(false);
     }
@@ -107,12 +126,8 @@ export default function ProductModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={editProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}
-      description={
-        editProduct
-          ? 'Cập nhật thông tin chi tiết của sản phẩm hiện có.'
-          : 'Vui lòng chọn danh mục và đơn vị tính đã được thiết lập sẵn trong hệ thống.'
-      }
+      title={editProduct ? t.productModal.editTitle : t.productModal.addTitle}
+      description={editProduct ? t.productModal.editDesc : t.productModal.addDesc}
       actions={
         <>
           <button
@@ -121,7 +136,7 @@ export default function ProductModal({
             onClick={onClose}
             disabled={saving}
           >
-            Hủy
+            {t.common.cancel}
           </button>
           <button
             type="button"
@@ -129,60 +144,131 @@ export default function ProductModal({
             disabled={saving}
             onClick={handleConfirm}
           >
-            {saving ? 'Đang lưu...' : 'Xác nhận'}
+            {saving ? t.common.saving : t.common.confirm}
           </button>
         </>
       }
     >
       <div className="form-grid">
+        <div
+          className="wide"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            padding: '12px 14px',
+            background: '#fafbff',
+            border: '1px dashed var(--line, #e8eaf2)',
+            borderRadius: '12px',
+            marginBottom: '4px',
+          }}
+        >
+          <ProductImage
+            alt={name || editProduct?.name || 'Product'}
+            category={categories.find((c) => c.id === categoryId)?.name}
+            size="lg"
+          />
+          <div>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text, #15203b)', display: 'block' }}>
+              {locale === 'vi' ? 'Hình ảnh sản phẩm' : 'Product Image'}
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--muted, #7c8498)' }}>
+              {locale === 'vi'
+                ? 'Chưa có ảnh sản phẩm (Hiển thị biểu tượng danh mục mặc định)'
+                : 'No product image (Default category placeholder displayed)'}
+            </span>
+          </div>
+        </div>
         <label className="wide">
-          Tên sản phẩm
+          {t.productModal.nameLabel}
           <input
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Ví dụ: Cáp sạc Type-C nhanh 65W"
+            maxLength={160}
+            onChange={(e) => {
+              const val = e.target.value;
+              setName(val);
+              if (nameAlreadyEnglish) setNameEn(val);
+            }}
+            placeholder={t.productModal.namePlaceholder}
           />
         </label>
 
+        <div className="wide" style={{ padding: '2px 0 4px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontWeight: 500 }}>
+            <input
+              type="checkbox"
+              checked={nameAlreadyEnglish}
+              onChange={(e) => toggleNameAlreadyEnglish(e.target.checked)}
+              style={{ width: 17, height: 17, flex: 'none', accentColor: '#7569eb' }}
+            />
+            <span>{t.productModal.alreadyEnglish}</span>
+          </label>
+          <p className="form-hint" style={{ margin: '4px 0 0 27px' }}>
+            {nameAlreadyEnglish
+              ? t.productModal.alreadyEnglishHint
+              : t.productModal.needEnglishHint}
+          </p>
+        </div>
+
+        {!nameAlreadyEnglish && (
+          <label className="wide">
+            {t.productModal.nameEnLabel}
+            <input
+              value={nameEn}
+              maxLength={160}
+              placeholder={t.productModal.nameEnPlaceholder}
+              onChange={(e) => setNameEn(e.target.value)}
+            />
+          </label>
+        )}
+
         <label>
-          Mã SKU
+          {t.productModal.skuLabel}
           <input
             value={sku}
+            maxLength={40}
             onChange={(e) => setSku(e.target.value)}
-            placeholder="Ví dụ: CAB-001"
+            placeholder={t.productModal.skuPlaceholder}
           />
         </label>
 
         <label>
-          Danh mục
+          {t.productModal.categoryLabel}
           <select
-            value={categoryName}
-            onChange={(e) => setCategoryName(e.target.value)}
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
           >
-            {categories.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
-              </option>
-            ))}
+            {categories.map((c) => {
+              const catName = locale === 'vi' ? c.name : (c.name_en?.trim() || c.name);
+              return (
+                <option key={c.id} value={c.id}>
+                  {catName}
+                </option>
+              );
+            })}
           </select>
         </label>
 
         <label>
-          Đơn vị tính
+          {t.productModal.unitLabel}
           <select
-            value={unitSymbol}
-            onChange={(e) => setUnitSymbol(e.target.value)}
+            value={unitId}
+            onChange={(e) => setUnitId(e.target.value)}
           >
-            {units.map((u) => (
-              <option key={u.id} value={u.symbol}>
-                {u.name} ({u.symbol})
-              </option>
-            ))}
+            {units.map((u) => {
+              const unitName = locale === 'vi' ? u.name : (u.name_en?.trim() || u.name);
+              const unitSymbol = locale === 'vi' ? u.symbol : (u.symbol_en?.trim() || u.symbol);
+              return (
+                <option key={u.id} value={u.id}>
+                  {unitName} ({unitSymbol})
+                </option>
+              );
+            })}
           </select>
         </label>
 
         <label>
-          Giá vốn (VNĐ)
+          {t.productModal.priceLabel}
           <input
             type="number"
             min="0"
@@ -192,18 +278,18 @@ export default function ProductModal({
         </label>
 
         <label>
-          Tồn ban đầu (nhập kho bằng phiếu)
+          {t.productModal.initialStockLabel}
           <input
             type="number"
             min="0"
-            disabled={!!editProduct}
+            disabled={Boolean(editProduct)}
             value={stock}
             onChange={(e) => setStock(e.target.value)}
           />
         </label>
 
         <label>
-          Ngưỡng cảnh báo tối thiểu
+          {t.productModal.thresholdLabel}
           <input
             type="number"
             min="0"
