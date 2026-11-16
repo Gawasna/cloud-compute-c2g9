@@ -23,21 +23,23 @@ let hasError = false;
 
 for (const file of expectedFiles) {
   const filePath = path.join(pumlDir, file);
-  if (!fs.existsSync(filePath)) {
-    console.error(`[FAIL] Missing expected file: ${file}`);
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    console.error(`[FAIL] Missing or unreadable expected file: ${file}`);
     hasError = true;
     continue;
   }
 
-  const stat = fs.statSync(filePath);
-  if (stat.size === 0) {
+  const byteSize = Buffer.byteLength(content, 'utf8');
+  if (byteSize === 0) {
     console.error(`[FAIL] File is empty: ${file}`);
     hasError = true;
     continue;
   }
 
   if (file.endsWith('.puml') && file !== 'aws-theme.puml') {
-    const content = fs.readFileSync(filePath, 'utf8');
     const startCount = (content.match(/@startuml/g) || []).length;
     const endCount = (content.match(/@enduml/g) || []).length;
 
@@ -53,9 +55,9 @@ for (const file of expectedFiles) {
       continue;
     }
 
-    console.log(`[PASS] ${file} (${stat.size} bytes) - Valid PUML structure & AWS theme inclusion.`);
+    console.log(`[PASS] ${file} (${byteSize} bytes) - Valid PUML structure & AWS theme inclusion.`);
   } else {
-    console.log(`[PASS] ${file} (${stat.size} bytes)`);
+    console.log(`[PASS] ${file} (${byteSize} bytes)`);
   }
 }
 

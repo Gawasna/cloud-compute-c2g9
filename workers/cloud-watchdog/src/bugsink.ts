@@ -56,7 +56,7 @@ export function getBugsinkIssueUrl(issueId: string | number): string {
 }
 
 export interface SimpleKV {
-  get: (key: string, type?: string) => Promise<string | null>;
+  get: (key: string, type?: unknown) => Promise<unknown>;
   put: (key: string, value: string, options?: { expirationTtl?: number }) => Promise<void>;
 }
 
@@ -67,7 +67,8 @@ export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /**

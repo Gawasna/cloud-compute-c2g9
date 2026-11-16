@@ -104,7 +104,7 @@ describe("Sentry Webhook Ingestion & Telegram Dispatcher Tests", () => {
       };
 
       const html = formatSentryAlert(maliciousPayload);
-      assert.doesNotMatch(html, /<script>/);
+      assert.doesNotMatch(html, /<script/i);
       assert.match(html, /&lt;script&gt;alert\('xss'\)&lt;\/script&gt; &amp; dangerous &lt;tag&gt;/);
       assert.match(html, /user &lt;input&gt; &amp; db/);
     });
@@ -162,7 +162,7 @@ describe("Sentry Webhook Ingestion & Telegram Dispatcher Tests", () => {
         assert.equal(sentBody.chat_id, mockEnv.TELEGRAM_CHAT_ID);
         assert.equal(sentBody.parse_mode, "HTML");
         assert.match(sentBody.text, /View Issue on Sentry/);
-        assert.match(sentBody.text, /https:\/\/sentry\.io\/organizations\/cc-org\/issues\/987654321\//);
+        assert.ok(sentBody.text.includes("https://sentry.io/organizations/cc-org/issues/987654321/"));
       } finally {
         globalThis.fetch = originalFetch;
       }

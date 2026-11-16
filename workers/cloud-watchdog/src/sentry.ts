@@ -81,7 +81,8 @@ export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /**
@@ -126,9 +127,12 @@ export function formatSentryAlert(payload: SentryWebhookPayload): string {
   const environment = event?.environment || "production";
   const release = event?.release || "N/A";
   const rawLink = issue?.permalink || event?.web_url || event?.url || payload.url || payload.web_url;
-  const link = rawLink && !rawLink.includes("sentry.io/organizations/cloudstock")
-    ? rawLink
-    : (issue?.id ? `https://gawasu.sentry.io/issues/?query=${encodeURIComponent(String(issue.id))}` : "https://gawasu.sentry.io/issues/?project=cloudstock");
+  let link = "https://gawasu.sentry.io/issues/?project=cloudstock";
+  if (rawLink && (rawLink.startsWith("https://") || rawLink.startsWith("http://"))) {
+    link = rawLink.includes("sentry.io/organizations/cloudstock")
+      ? (issue?.id ? `https://gawasu.sentry.io/issues/?query=${encodeURIComponent(String(issue.id))}` : link)
+      : rawLink;
+  }
   const projectName = project?.name || project?.slug || "CloudStock (gawasu)";
 
   return [

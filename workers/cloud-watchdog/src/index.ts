@@ -29,6 +29,7 @@ export interface Env {
   SUPABASE_WEBHOOK_SECRET?: string;
   BUGSINK_SPIKE_THRESHOLD?: string;
   WATCHDOG_KV?: KVNamespace;
+  [key: string]: unknown;
 }
 
 export interface ProbeResult {
@@ -82,12 +83,11 @@ export async function executeProbe(targetUrl: string, timeoutMs = 8000): Promise
       durationMs,
       error: isHealthy ? undefined : `HTTP ${res.status}, DB: ${dbStatus || "disconnected"}`,
     };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+  } catch {
     return {
       ok: false,
       durationMs: Date.now() - start,
-      error: errorMsg,
+      error: "Health probe connection failed",
     };
   }
 }
@@ -335,7 +335,15 @@ const worker = {
     // 5. Manual on-demand probe trigger
     if (url.pathname === "/trigger") {
       const result = await handleWatchdogPulse(env);
-      return new Response(JSON.stringify(result, null, 2), {
+      const safeResponse = {
+        ok: result.ok,
+        statusCode: result.statusCode,
+        dbStatus: result.dbStatus,
+        dbLatencyMs: result.dbLatencyMs,
+        durationMs: result.durationMs,
+        status: result.ok ? "healthy" : "unhealthy",
+      };
+      return new Response(JSON.stringify(safeResponse, null, 2), {
         status: result.ok ? 200 : 503,
         headers: { "Content-Type": "application/json" },
       });

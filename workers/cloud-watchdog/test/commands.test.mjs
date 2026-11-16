@@ -97,7 +97,7 @@ describe("Telegram Slash Commands Handler Tests", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
       const urlStr = String(url);
-      if (urlStr.includes("api.telegram.org")) {
+      if (urlStr.startsWith("https://api.telegram.org/")) {
         sentBody = String(options?.body || "");
         return new Response(JSON.stringify({ ok: true, result: { message_id: 101 } }), { status: 200 });
       }
@@ -130,7 +130,7 @@ describe("Telegram Slash Commands Handler Tests", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
       const urlStr = String(url);
-      if (urlStr.includes("api.telegram.org")) {
+      if (urlStr.startsWith("https://api.telegram.org/")) {
         sentBody = String(options?.body || "");
         return new Response(JSON.stringify({ ok: true, result: { message_id: 102 } }), { status: 200 });
       }

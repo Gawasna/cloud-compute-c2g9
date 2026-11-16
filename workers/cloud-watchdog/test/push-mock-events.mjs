@@ -4,9 +4,9 @@
  */
 
 const WORKER_BASE = "https://cc-cloud-watchdog.hunglepy05.workers.dev";
-const SENTRY_SECRET = "mock-sentry-token";
-const SUPABASE_SECRET = "mock-supabase-token";
-const DMS_SECRET = "mock-dms-token";
+const SENTRY_SECRET = process.env.TEST_SENTRY_SECRET || "mock-sentry-token";
+const SUPABASE_SECRET = process.env.TEST_SUPABASE_SECRET || "mock-supabase-token";
+const DMS_SECRET = process.env.TEST_DMS_SECRET || "mock-dms-token";
 
 async function pushSentryMock() {
   console.log("\n[1/3] Đang gửi Mock Event Sentry (P0 Fatal Crash)...");

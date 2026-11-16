@@ -138,7 +138,7 @@ describe("Supabase Webhook Ingestion & Latency Guard Suite", () => {
       assert.match(insertHtml, /<code>INSERT<\/code>/);
       assert.match(insertHtml, /public\.inventories/);
       assert.match(insertHtml, /&lt;script&gt;alert\('xss'\)&lt;\/script&gt;/);
-      assert.doesNotMatch(insertHtml, /<script>/);
+      assert.doesNotMatch(insertHtml, /<script/i);
 
       // 2. UPDATE alert
       const updateHtml = formatSupabaseWebhookAlert({

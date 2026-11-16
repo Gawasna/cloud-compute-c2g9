@@ -116,7 +116,7 @@ export function formatSupabaseWebhookAlert(payload: SupabaseWebhookPayload): str
 export async function evaluateSupabaseLatency(
   latencyMs: number,
   dbStatus: string | undefined,
-  kv?: { get: (k: string, t?: string) => Promise<string | null>; put: (k: string, v: string) => Promise<void> } | null,
+  kv?: { get: (k: string, t?: unknown) => Promise<unknown>; put: (k: string, v: string) => Promise<void> } | null,
   thresholdMs: number = 2500,
   recoveryThresholdMs: number = 1000
 ): Promise<SupabaseLatencyResult> {
@@ -132,7 +132,7 @@ export async function evaluateSupabaseLatency(
     try {
       const stored = await kv.get(SUPABASE_LATENCY_STATE_KEY, "json");
       if (stored) {
-        state = stored as SupabaseLatencyState;
+        state = (typeof stored === "string" ? JSON.parse(stored) : stored) as SupabaseLatencyState;
       }
     } catch {
       // KV fetch error fallback

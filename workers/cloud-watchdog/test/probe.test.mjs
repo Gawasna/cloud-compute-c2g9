@@ -115,7 +115,7 @@ describe("Cloud Watchdog Worker Probe & Notifier Tests", () => {
     try {
       const success = await sendTelegramAlert("test-token", "12345678", alert);
       assert.equal(success, true);
-      assert.match(interceptedUrl, /api\.telegram\.org\/bottest-token\/sendMessage/);
+      assert.equal(interceptedUrl, "https://api.telegram.org/bottest-token/sendMessage");
       assert.match(interceptedBody, /12345678/);
       assert.match(interceptedBody, /CRITICAL ALERT/);
       assert.match(interceptedBody, /disconnected/);
