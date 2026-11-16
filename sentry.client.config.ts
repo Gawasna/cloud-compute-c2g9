@@ -7,6 +7,7 @@ import {
   resolveTelemetryConfig,
   createMultiplexedTelemetryTransport,
 } from "./src/lib/observability/multiplexed-transport";
+import { captureLooseError } from "./src/lib/observability";
 
 const { primaryDsn, isSentryValid } = resolveTelemetryConfig();
 
@@ -22,3 +23,25 @@ Sentry.init({
   // Setting this option to true will print useful information to the console while you're setting up Sentry.
   debug: false,
 });
+
+if (typeof window !== "undefined") {
+  window.addEventListener("securitypolicyviolation", (event) => {
+    try {
+      captureLooseError(
+        new Error(
+          `Content Security Policy violation: Blocked ${event.blockedURI} by directive '${event.violatedDirective}'`
+        ),
+        {
+          directive: event.violatedDirective,
+          blockedUri: event.blockedURI,
+          sourceFile: event.sourceFile,
+          lineNumber: event.lineNumber,
+          columnNumber: event.columnNumber,
+          statusCode: event.statusCode,
+        }
+      );
+    } catch {
+      // telemetry safety
+    }
+  });
+}

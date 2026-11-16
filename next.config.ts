@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
           // The browser no longer talks to Supabase Auth directly (login goes through /api/auth/*),
           // so Supabase is intentionally NOT whitelisted in connect-src.
           telemetryDsns: [process.env.NEXT_PUBLIC_SENTRY_DSN, process.env.NEXT_PUBLIC_BUGSINK_DSN],
+          mediaOrigins: [
+            process.env.NEXT_PUBLIC_MEDIA_WORKER_URL,
+            "https://cc-media-worker.hunglepy05.workers.dev",
+          ],
         }),
       },
     ];

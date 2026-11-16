@@ -15,6 +15,7 @@ import {
 import { AppShell, type Page, type Role, ROLE_PERMISSIONS } from '@/components/layout';
 import { Toast, SafeBoundary } from '@/components/ui';
 import { withClientHandler } from '@/lib/api/client-handler';
+import { captureLooseError } from '@/lib/observability';
 import UserManagement from '@/components/UserManagement';
 
 import {
@@ -115,6 +116,11 @@ function DashboardContent({ identity }: DashboardProps) {
         );
       }
     } catch (err) {
+      try {
+        captureLooseError(err, { source: 'dashboard.refreshData' });
+      } catch {
+        // resilient
+      }
       setDataError(
         err instanceof Error
           ? err.message
@@ -154,6 +160,11 @@ function DashboardContent({ identity }: DashboardProps) {
       })
       .catch((err) => {
         if (!active) return;
+        try {
+          captureLooseError(err, { source: 'dashboard.initialLoad' });
+        } catch {
+          // resilient
+        }
         setDataError(
           err instanceof Error
             ? err.message

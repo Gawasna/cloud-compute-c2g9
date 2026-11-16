@@ -1,4 +1,5 @@
 import { authedFetch } from '@/lib/auth/client';
+import { captureLooseError } from '@/lib/observability';
 
 // Cookie-based sessions only work same-origin, so the API base is always the relative /api.
 const BASE = '/api';
@@ -83,10 +84,25 @@ export interface ArchivedResponse {
 }
 
 export async function apiRequest<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await authedFetch(`${BASE}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
-  });
+  const method = init.method || 'GET';
+  let response: Response;
+  try {
+    response = await authedFetch(`${BASE}${path}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init.headers },
+    });
+  } catch (networkErr) {
+    try {
+      captureLooseError(networkErr, {
+        path,
+        method,
+        networkError: true,
+      });
+    } catch {
+      // resilient
+    }
+    throw networkErr;
+  }
 
   if (response.status === 401) {
     throw new Error('Session expired. Please sign in again.');
@@ -100,7 +116,21 @@ export async function apiRequest<T = unknown>(path: string, init: RequestInit = 
       : typeof raw === 'string'
       ? raw
       : `Request failed (${response.status})`;
-    throw new Error(message);
+    const err = new Error(message);
+
+    if (response.status >= 500) {
+      try {
+        captureLooseError(err, {
+          path,
+          method,
+          status: response.status,
+        });
+      } catch {
+        // resilient
+      }
+    }
+
+    throw err;
   }
 
   if (response.status === 204) return undefined as T;
@@ -130,16 +160,49 @@ export interface LowStockItem {
 }
 
 export async function downloadReportCsv(kind: 'inventory' | 'low-stock' | 'movements') {
-  const response = await authedFetch(`${BASE}/reports/export?kind=${encodeURIComponent(kind)}`);
+  const path = `/reports/export?kind=${encodeURIComponent(kind)}`;
+  let response: Response;
+  try {
+    response = await authedFetch(`${BASE}${path}`);
+  } catch (networkErr) {
+    try {
+      captureLooseError(networkErr, {
+        path,
+        method: 'GET',
+        kind,
+        networkError: true,
+      });
+    } catch {
+      // resilient
+    }
+    throw networkErr;
+  }
+
   if (response.status === 401) {
     throw new Error('Session expired. Please sign in again.');
   }
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(
-      Array.isArray(payload.message) ? payload.message.join(', ') : payload.message || 'Unable to export report'
-    );
+    const message = Array.isArray(payload.message)
+      ? payload.message.join(', ')
+      : payload.message || 'Unable to export report';
+    const err = new Error(message);
+
+    if (response.status >= 500) {
+      try {
+        captureLooseError(err, {
+          path,
+          method: 'GET',
+          status: response.status,
+          kind,
+        });
+      } catch {
+        // resilient
+      }
+    }
+
+    throw err;
   }
 
   const blob = await response.blob();

@@ -40,4 +40,26 @@ describe("Security: HTTP security headers", () => {
     assert.ok(proxy.includes("/api/:path*") && proxy.includes("429"));
     assert.ok(proxy.includes('"/api/health"'), "health endpoint must stay exempt for uptime monitors");
   });
+  it("img-src and connect-src whitelist media worker origin without universal wildcard", () => {
+    const defaultCsp = buildContentSecurityPolicy(env);
+    const defaultImg = defaultCsp.split("; ").find((d) => d.startsWith("img-src"));
+    const defaultConnect = defaultCsp.split("; ").find((d) => d.startsWith("connect-src"));
+
+    assert.ok(defaultImg.includes("https://cc-media-worker.hunglepy05.workers.dev"));
+    assert.ok(defaultConnect.includes("https://cc-media-worker.hunglepy05.workers.dev"));
+    assert.ok(!/img-src[^;]*\s\*(\s|$)/.test(defaultImg), "img-src must not contain universal wildcard *");
+    assert.ok(!/connect-src[^;]*\s\*(\s|$)/.test(defaultConnect), "connect-src must not contain universal wildcard *");
+
+    const customCsp = buildContentSecurityPolicy({
+      ...env,
+      mediaOrigins: ["https://cdn.example.com/assets", undefined, "invalid-url"],
+    });
+    const customImg = customCsp.split("; ").find((d) => d.startsWith("img-src"));
+    const customConnect = customCsp.split("; ").find((d) => d.startsWith("connect-src"));
+    assert.ok(customImg.includes("https://cdn.example.com"));
+    assert.ok(customConnect.includes("https://cdn.example.com"));
+    assert.ok(!customImg.includes("invalid-url"));
+    assert.ok(!/img-src[^;]*\s\*(\s|$)/.test(customImg));
+    assert.ok(!/connect-src[^;]*\s\*(\s|$)/.test(customConnect));
+  });
 });

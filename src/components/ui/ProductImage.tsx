@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { ImageIcon, renderCategoryIcon } from './Icons';
+import { captureLooseError } from '@/lib/observability';
 
 export interface ProductImageProps {
   src?: string | null;
@@ -60,7 +61,17 @@ export default function ProductImage({
           alt={alt}
           loading="lazy"
           decoding="async"
-          onError={() => setErroredSrc(normalizedSrc)}
+          onError={() => {
+            setErroredSrc(normalizedSrc);
+            try {
+              captureLooseError(
+                new Error(`Failed to load product image for ${alt}: ${normalizedSrc}`),
+                { component: 'ProductImage', sku: alt, src: normalizedSrc, category }
+              );
+            } catch {
+              // resilient
+            }
+          }}
           style={{
             width: '100%',
             height: '100%',
