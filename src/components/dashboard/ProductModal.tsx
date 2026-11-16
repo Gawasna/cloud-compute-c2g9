@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Modal } from '@/components/ui';
+import { Modal, ProductImage } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
 import type { ApiCategory, ApiUnit, Product } from './types';
 
@@ -150,6 +150,35 @@ export default function ProductModal({
       }
     >
       <div className="form-grid">
+        <div
+          className="wide"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            padding: '12px 14px',
+            background: '#fafbff',
+            border: '1px dashed var(--line, #e8eaf2)',
+            borderRadius: '12px',
+            marginBottom: '4px',
+          }}
+        >
+          <ProductImage
+            alt={name || editProduct?.name || 'Product'}
+            category={categories.find((c) => c.id === categoryId)?.name}
+            size="lg"
+          />
+          <div>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text, #15203b)', display: 'block' }}>
+              {locale === 'vi' ? 'Hình ảnh sản phẩm' : 'Product Image'}
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--muted, #7c8498)' }}>
+              {locale === 'vi'
+                ? 'Chưa có ảnh sản phẩm (Hiển thị biểu tượng danh mục mặc định)'
+                : 'No product image (Default category placeholder displayed)'}
+            </span>
+          </div>
+        </div>
         <label className="wide">
           {t.productModal.nameLabel}
           <input
@@ -174,7 +203,7 @@ export default function ProductModal({
             />
             <span>{t.productModal.alreadyEnglish}</span>
           </label>
-          <p className="hint" style={{ margin: '5px 0 0 27px' }}>
+          <p className="form-hint" style={{ margin: '4px 0 0 27px' }}>
             {nameAlreadyEnglish
               ? t.productModal.alreadyEnglishHint
               : t.productModal.needEnglishHint}

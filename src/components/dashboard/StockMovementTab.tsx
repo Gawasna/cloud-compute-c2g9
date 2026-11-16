@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { StockBadge } from '@/components/ui';
-import { PlusIcon, renderCategoryIcon } from '@/components/ui/Icons';
+import { StockBadge, ProductImage } from '@/components/ui';
+import { PlusIcon } from '@/components/ui/Icons';
 import { useI18n } from '@/lib/i18n';
 import type { Product } from './types';
 
@@ -57,13 +57,11 @@ export default function StockMovementTab({
                 <tr key={p.id}>
                   <td>
                     <div className="item-name">
-                      <span className="item-avatar">
-                        {renderCategoryIcon(p.category, { size: 16 })}
-                      </span>
+                      <ProductImage alt={p.name} category={p.category} size="md" />
                       <div>
                         <strong>{p.name}</strong>
                         {p.nameOriginal && p.nameOriginal !== p.name && (
-                          <span className="hint" style={{ display: 'block', fontSize: 12 }}>
+                          <span className="product-subtitle">
                             {p.nameOriginal}
                           </span>
                         )}

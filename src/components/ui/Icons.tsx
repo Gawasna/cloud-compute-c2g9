@@ -29,6 +29,10 @@ import {
   Folder,
   Eye,
   EyeOff,
+  Globe,
+  ChevronDown,
+  LogOut,
+  Image as LucideImage,
   type LucideProps,
 } from 'lucide-react';
 import { ICON_DEFAULTS } from '@/lib/theme/tokens';
@@ -93,6 +97,10 @@ export const ArrowRightIcon = createIcon(ArrowRight);
 export const CheckIcon = createIcon(Check);
 export const EyeIcon = createIcon(Eye);
 export const EyeOffIcon = createIcon(EyeOff);
+export const GlobeIcon = createIcon(Globe);
+export const ChevronDownIcon = createIcon(ChevronDown);
+export const LogOutIcon = createIcon(LogOut);
+export const ImageIcon = createIcon(LucideImage);
 
 // Status & Feedback Icons
 export const CheckCircle2Icon = createIcon(CheckCircle2);

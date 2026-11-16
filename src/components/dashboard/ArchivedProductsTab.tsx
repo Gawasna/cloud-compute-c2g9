@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { apiRequest, type ArchivedProduct, type ArchivedResponse } from '@/lib/api/cloudstock';
+import { ProductImage } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
 
 export interface ArchivedProductsTabProps {
@@ -157,12 +158,17 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
               return (
                 <tr key={p.id}>
                   <td>
-                    <strong>{primaryName}</strong>
-                    {secondaryName && secondaryName.trim() !== primaryName.trim() && (
-                      <span className="hint" style={{ display: 'block', fontSize: 12 }}>
-                        {secondaryName}
-                      </span>
-                    )}
+                    <div className="item-name">
+                      <ProductImage alt={primaryName} category={catName} size="md" />
+                      <div>
+                        <strong>{primaryName}</strong>
+                        {secondaryName && secondaryName.trim() !== primaryName.trim() && (
+                          <span className="product-subtitle">
+                            {secondaryName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td className="mono">{p.sku}</td>
                   <td>{catName}</td>

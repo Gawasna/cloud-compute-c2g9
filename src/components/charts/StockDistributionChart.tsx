@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import type { PieSectorDataItem } from 'recharts';
 import { THEME_COLORS, CHART_COLORS } from '@/lib/theme/tokens';
+import { useI18n } from '@/lib/i18n';
 import CustomChartTooltip from './CustomChartTooltip';
 
 const emptySubscribe = () => () => {};
@@ -69,12 +70,14 @@ export default function StockDistributionChart({
   totalProducts,
   height = 190,
   showLegend = true,
-  centerLabel = 'items',
+  centerLabel,
 }: StockDistributionChartProps) {
   const isClient = useIsClient();
+  const { t, locale, formatNumber } = useI18n();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const total = totalProducts ?? (inStockCount + lowStockCount + outOfStockCount);
+  const resolvedCenterLabel = centerLabel ?? (locale === 'vi' ? 'sản phẩm' : 'items');
 
   const data = [
     {
@@ -193,14 +196,14 @@ export default function StockDistributionChart({
         >
           <span
             style={{
-              fontSize: '22px',
+              fontSize: '20px',
               fontWeight: 800,
               color: THEME_COLORS.textPrimary,
               lineHeight: 1.1,
               letterSpacing: '-0.5px',
             }}
           >
-            {total.toLocaleString('en-US')}
+            {formatNumber ? formatNumber(total) : total.toLocaleString('en-US')}
           </span>
           <span
             style={{
@@ -210,28 +213,27 @@ export default function StockDistributionChart({
               marginTop: '2px',
             }}
           >
-            {centerLabel}
+            {resolvedCenterLabel}
           </span>
         </div>
       </div>
 
       {showLegend && (
         <div
-          className="donut-legend"
+          className="chart-donut-legend"
           style={{
             display: 'flex',
             justifyContent: 'center',
+            alignItems: 'center',
             flexWrap: 'wrap',
             gap: '16px',
-            fontSize: '11px',
-            color: THEME_COLORS.textSecondary,
             marginTop: '12px',
             width: '100%',
           }}
         >
           <div
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
               cursor: 'pointer',
@@ -250,16 +252,19 @@ export default function StockDistributionChart({
                 borderRadius: '50%',
                 display: 'inline-block',
                 margin: 0,
+                flexShrink: 0,
               }}
             />
-            <span>In Stock</span>
-            <strong style={{ color: THEME_COLORS.textPrimary, fontWeight: 700 }}>
-              {inStockCount.toLocaleString('en-US')}
+            <span style={{ fontSize: '12px', fontWeight: 500, color: THEME_COLORS.textSecondary }}>
+              {t?.common?.inStock || 'In Stock'}
+            </span>
+            <strong style={{ fontSize: '12px', fontWeight: 700, color: THEME_COLORS.textPrimary }}>
+              {formatNumber ? formatNumber(inStockCount) : inStockCount.toLocaleString('en-US')}
             </strong>
           </div>
           <div
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
               cursor: 'pointer',
@@ -278,16 +283,19 @@ export default function StockDistributionChart({
                 borderRadius: '50%',
                 display: 'inline-block',
                 margin: 0,
+                flexShrink: 0,
               }}
             />
-            <span>Low Stock</span>
-            <strong style={{ color: THEME_COLORS.textPrimary, fontWeight: 700 }}>
-              {lowStockCount.toLocaleString('en-US')}
+            <span style={{ fontSize: '12px', fontWeight: 500, color: THEME_COLORS.textSecondary }}>
+              {t?.common?.lowStock || 'Low Stock'}
+            </span>
+            <strong style={{ fontSize: '12px', fontWeight: 700, color: THEME_COLORS.textPrimary }}>
+              {formatNumber ? formatNumber(lowStockCount) : lowStockCount.toLocaleString('en-US')}
             </strong>
           </div>
           <div
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
               cursor: 'pointer',
@@ -306,11 +314,14 @@ export default function StockDistributionChart({
                 borderRadius: '50%',
                 display: 'inline-block',
                 margin: 0,
+                flexShrink: 0,
               }}
             />
-            <span>Out of Stock</span>
-            <strong style={{ color: THEME_COLORS.textPrimary, fontWeight: 700 }}>
-              {outOfStockCount.toLocaleString('en-US')}
+            <span style={{ fontSize: '12px', fontWeight: 500, color: THEME_COLORS.textSecondary }}>
+              {t?.common?.outOfStock || 'Out of Stock'}
+            </span>
+            <strong style={{ fontSize: '12px', fontWeight: 700, color: THEME_COLORS.textPrimary }}>
+              {formatNumber ? formatNumber(outOfStockCount) : outOfStockCount.toLocaleString('en-US')}
             </strong>
           </div>
         </div>

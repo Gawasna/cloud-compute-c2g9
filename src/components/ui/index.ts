@@ -22,8 +22,18 @@ export type { StockBadgeProps } from './StockBadge';
 export { default as MetricCard } from './MetricCard';
 export type { MetricCardProps } from './MetricCard';
 
-export { default as Skeleton } from './Skeleton';
-export type { SkeletonProps } from './Skeleton';
+export {
+  default as Skeleton,
+  TableSkeleton,
+  MetricCardSkeleton,
+  ChartSkeleton,
+} from './Skeleton';
+export type {
+  SkeletonProps,
+  TableSkeletonProps,
+  MetricCardSkeletonProps,
+  ChartSkeletonProps,
+} from './Skeleton';
 
 export { default as EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
@@ -39,3 +49,6 @@ export type { SafeBoundaryProps } from './ErrorBoundary';
 
 export { default as BrandSplashScreen } from './BrandSplashScreen';
 export type { BrandSplashScreenProps } from './BrandSplashScreen';
+
+export { default as ProductImage } from './ProductImage';
+export type { ProductImageProps } from './ProductImage';

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { apiRequest } from '@/lib/api/cloudstock';
+import { TableSkeleton } from '@/components/ui';
+import { PlusIcon, XIcon } from '@/components/ui/Icons';
 
 type Role = 'admin' | 'staff' | 'viewer';
 type UserRow = {
@@ -101,8 +103,10 @@ export default function UserManagement({ ownId }: { ownId: string }) {
             setError('');
             setMessage('');
           }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
-          ＋ {showCreate ? 'Close' : 'Add User'}
+          {showCreate ? <XIcon size={16} /> : <PlusIcon size={16} />}
+          <span>{showCreate ? 'Close' : 'Add User'}</span>
         </button>
       </div>
 
@@ -169,7 +173,7 @@ export default function UserManagement({ ownId }: { ownId: string }) {
       )}
 
       {loading ? (
-        <p className="user-status">Loading user accounts...</p>
+        <TableSkeleton rows={5} cols={5} hasAvatar={false} />
       ) : (
         <div className="table-scroll">
           <table>

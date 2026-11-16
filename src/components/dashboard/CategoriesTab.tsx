@@ -51,7 +51,7 @@ export default function CategoriesTab({
               </div>
               <h3>{primaryName}</h3>
               {secondaryName && secondaryName !== primaryName && (
-                <small className="hint" style={{ display: 'block', marginBottom: 4 }}>
+                <small className="category-subtext">
                   {secondaryName}
                 </small>
               )}

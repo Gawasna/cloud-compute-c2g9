@@ -193,4 +193,23 @@ describe('Unit: Comprehensive i18n Localization Architecture', () => {
       'AppShell must provide I18nProvider context'
     );
   });
+
+  it('should verify I18nProvider maintains hydration safety and syncs post-mount', () => {
+    const contextContent = readFileSync(resolve(cwd, 'src/lib/i18n/context.tsx'), 'utf8');
+    assert.strictEqual(
+      contextContent.includes('useState<Locale>(initialLocale || DEFAULT_LOCALE)'),
+      true,
+      'I18nProvider must initialize state with initialLocale || DEFAULT_LOCALE for hydration parity'
+    );
+    assert.strictEqual(
+      contextContent.includes('isMounted'),
+      true,
+      'I18nProvider must provide isMounted state flag'
+    );
+    assert.strictEqual(
+      contextContent.includes('useEffect(() => {'),
+      true,
+      'I18nProvider must synchronize client locale in useEffect post-hydration'
+    );
+  });
 });

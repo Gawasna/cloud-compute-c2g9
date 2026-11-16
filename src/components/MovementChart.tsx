@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest, type ReportPeriod, type TrendResponse } from '@/lib/api/cloudstock';
-import { withErrorBoundary } from '@/components/ui';
+import { withErrorBoundary, ChartSkeleton } from '@/components/ui';
 import { MovementTrendChart } from '@/components/charts';
 
 const labels: Record<ReportPeriod, string> = { day: 'Day', week: 'Week', month: 'Month' };
@@ -107,9 +107,7 @@ function MovementChartInner({ title = 'Inventory Movement Trends' }: { title?: s
           </button>
         </div>
       ) : loading ? (
-        <div className="chart-placeholder" style={{ height: '240px' }}>
-          Loading trend analytics...
-        </div>
+        <ChartSkeleton height={240} type="bar" />
       ) : (
         <>
           <MovementTrendChart

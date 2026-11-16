@@ -2,14 +2,17 @@
 
 import React, { useState, useMemo } from 'react';
 import type { Role } from '@/components/layout/Sidebar';
-import { StockBadge, EmptyState } from '@/components/ui';
+import { StockBadge, EmptyState, ProductImage } from '@/components/ui';
 import {
   PlusIcon,
   SearchIcon,
-  renderCategoryIcon,
+  EditIcon,
+  Trash2Icon,
+  ArrowLeftRightIcon,
 } from '@/components/ui/Icons';
 import { useI18n } from '@/lib/i18n';
 import type { Product } from './types';
+import ProductDetailModal from './ProductDetailModal';
 
 export interface ProductsTabProps {
   role: Role;
@@ -31,6 +34,7 @@ export default function ProductsTab({
   const { t, formatNumber, interpolate } = useI18n();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'in_stock' | 'low_stock' | 'out_of_stock'>('all');
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
 
   const visibleProducts = useMemo(() => {
     return products.filter((p) => {
@@ -117,16 +121,18 @@ export default function ProductsTab({
           </thead>
           <tbody>
             {visibleProducts.map((p) => (
-              <tr key={p.id}>
+              <tr
+                key={p.id}
+                onClick={() => setDetailProduct(p)}
+                style={{ cursor: 'pointer' }}
+              >
                 <td>
                   <div className="item-name">
-                    <span className="item-avatar">
-                      {renderCategoryIcon(p.category, { size: 16 })}
-                    </span>
+                    <ProductImage alt={p.name} category={p.category} size="md" />
                     <div>
                       <strong>{p.name}</strong>
                       {p.nameOriginal && p.nameOriginal !== p.name && (
-                        <span className="hint" style={{ display: 'block', fontSize: 12 }}>
+                        <span className="product-subtitle">
                           {p.nameOriginal}
                         </span>
                       )}
@@ -144,33 +150,50 @@ export default function ProductsTab({
                 </td>
                 {role !== 'viewer' && (
                   <td className="actions">
-                    {role === 'admin' && (
-                      <>
+                    <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                      {role === 'admin' && (
+                        <>
+                          <button
+                            type="button"
+                            className="icon-action-btn"
+                            title={t.common.edit}
+                            aria-label={t.common.edit}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditProduct(p);
+                            }}
+                          >
+                            <EditIcon size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-action-btn red"
+                            title={t.common.delete}
+                            aria-label={t.common.delete}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteProduct(p);
+                            }}
+                          >
+                            <Trash2Icon size={14} />
+                          </button>
+                        </>
+                      )}
+                      {role === 'staff' && (
                         <button
                           type="button"
-                          className="small-btn"
-                          onClick={() => onEditProduct(p)}
+                          className="icon-action-btn"
+                          title={t.productsTab.createTicket}
+                          aria-label={t.productsTab.createTicket}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCreateStockTicket(p.sku);
+                          }}
                         >
-                          {t.common.edit}
+                          <ArrowLeftRightIcon size={14} />
                         </button>
-                        <button
-                          type="button"
-                          className="small-btn red"
-                          onClick={() => onDeleteProduct(p)}
-                        >
-                          {t.common.delete}
-                        </button>
-                      </>
-                    )}
-                    {role === 'staff' && (
-                      <button
-                        type="button"
-                        className="small-btn"
-                        onClick={() => onCreateStockTicket(p.sku)}
-                      >
-                        {t.productsTab.createTicket}
-                      </button>
-                    )}
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>
@@ -192,6 +215,15 @@ export default function ProductsTab({
           </tbody>
         </table>
       </div>
+
+      <ProductDetailModal
+        isOpen={Boolean(detailProduct)}
+        onClose={() => setDetailProduct(null)}
+        product={detailProduct}
+        role={role}
+        onEdit={onEditProduct}
+        onCreateStockTicket={onCreateStockTicket}
+      />
     </section>
   );
 }

@@ -7,7 +7,7 @@ import {
   PAGE_NAMES,
   ROLE_NAMES,
 } from './Sidebar';
-import { BellIcon } from '@/components/ui/Icons';
+import { BellIcon, LogOutIcon } from '@/components/ui/Icons';
 import { useI18n, LanguageSwitcher } from '@/lib/i18n';
 
 export interface TopbarProps {
@@ -56,18 +56,21 @@ export default function Topbar({
           <strong>{t.roles[role] || ROLE_NAMES[role]}</strong>
         </div>
 
-        <button
-          type="button"
-          className="logout-btn"
-          onClick={onLogout}
-        >
-          {t.common.logout}
-        </button>
-
         <div className="bell" title={t.topbar.alertTooltip} aria-label={t.topbar.alertTooltip}>
           <BellIcon size={18} />
           {lowStockCount > 0 && <i>{lowStockCount}</i>}
         </div>
+
+        <button
+          type="button"
+          className="logout-btn"
+          onClick={onLogout}
+          title={t.common.logout}
+          aria-label={t.common.logout}
+        >
+          <LogOutIcon size={15} />
+          <span>{t.common.logout}</span>
+        </button>
       </div>
     </header>
   );

@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import MovementChart from '@/components/MovementChart';
 import { apiRequest, downloadReportCsv, type LowStockItem, type ApiDashboard } from '@/lib/api/cloudstock';
+import { Skeleton, TableSkeleton } from '@/components/ui';
+import { DownloadIcon } from '@/components/ui/Icons';
 import { useI18n } from '@/lib/i18n';
 import type { Product } from './types';
 
@@ -73,16 +75,20 @@ export default function ReportsTab(_props?: ReportsTabProps) {
             className="btn secondary"
             disabled={Boolean(downloading)}
             onClick={() => void download('inventory')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            {t.reportsTab.inventoryCsv}
+            <DownloadIcon size={14} />
+            <span>{t.reportsTab.inventoryCsv}</span>
           </button>
           <button
             type="button"
             className="btn secondary"
             disabled={Boolean(downloading)}
             onClick={() => void download('movements')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            {t.reportsTab.movementsCsv}
+            <DownloadIcon size={14} />
+            <span>{t.reportsTab.movementsCsv}</span>
           </button>
         </div>
       </div>
@@ -97,18 +103,34 @@ export default function ReportsTab(_props?: ReportsTabProps) {
         <div className="metric">
           <span>{t.reportsTab.valuation}</span>
           <b className="value-text">
-            {loading ? '...' : formatCurrency(Number(summary?.inventory_value || 0))}
+            {loading ? (
+              <Skeleton height={28} width={140} borderRadius={6} />
+            ) : (
+              formatCurrency(Number(summary?.inventory_value || 0))
+            )}
           </b>
           <small>{t.reportsTab.valuationSub}</small>
         </div>
         <div className="metric">
           <span>{t.overview.lowStockAlert}</span>
-          <b>{loading ? '...' : formatNumber(summary?.low_stock ?? 0)}</b>
+          <b>
+            {loading ? (
+              <Skeleton height={28} width={60} borderRadius={6} />
+            ) : (
+              formatNumber(summary?.low_stock ?? 0)
+            )}
+          </b>
           <small>{t.overview.lowStockAlertSub}</small>
         </div>
         <div className="metric">
           <span>{t.overview.outOfStock}</span>
-          <b>{loading ? '...' : formatNumber(summary?.out_of_stock ?? 0)}</b>
+          <b>
+            {loading ? (
+              <Skeleton height={28} width={60} borderRadius={6} />
+            ) : (
+              formatNumber(summary?.out_of_stock ?? 0)
+            )}
+          </b>
           <small>{t.overview.outOfStockSub}</small>
         </div>
       </div>
@@ -126,47 +148,53 @@ export default function ReportsTab(_props?: ReportsTabProps) {
             className="btn secondary"
             disabled={Boolean(downloading)}
             onClick={() => void download('low-stock')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            {t.reportsTab.lowStockCsv}
+            <DownloadIcon size={14} />
+            <span>{t.reportsTab.lowStockCsv}</span>
           </button>
         </div>
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>{t.common.sku}</th>
-                <th>{t.common.productName}</th>
-                <th>{t.common.stock}</th>
-                <th>{t.common.threshold}</th>
-                <th>{t.reportsTab.shortage}</th>
-                <th>{t.common.status}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alerts.map((p) => (
-                <tr key={p.id}>
-                  <td className="mono">{p.sku}</td>
-                  <td>{p.name}</td>
-                  <td>{formatNumber(p.stock_quantity)}</td>
-                  <td>{formatNumber(p.minimum_stock)}</td>
-                  <td>{formatNumber(p.shortage)}</td>
-                  <td>
-                    <span className={'tag ' + (p.status === 'OUT' ? 'danger' : 'warning')}>
-                      {p.status === 'OUT' ? t.common.outOfStock : t.common.lowStock}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {!loading && !alerts.length && (
+        {loading ? (
+          <TableSkeleton rows={4} cols={6} hasAvatar={false} />
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={6} className="empty">
-                    {t.reportsTab.emptyAlerts}
-                  </td>
+                  <th>{t.common.sku}</th>
+                  <th>{t.common.productName}</th>
+                  <th>{t.common.stock}</th>
+                  <th>{t.common.threshold}</th>
+                  <th>{t.reportsTab.shortage}</th>
+                  <th>{t.common.status}</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {alerts.map((p) => (
+                  <tr key={p.id}>
+                    <td className="mono">{p.sku}</td>
+                    <td>{p.name}</td>
+                    <td>{formatNumber(p.stock_quantity)}</td>
+                    <td>{formatNumber(p.minimum_stock)}</td>
+                    <td>{formatNumber(p.shortage)}</td>
+                    <td>
+                      <span className={'tag ' + (p.status === 'OUT' ? 'danger' : 'warning')}>
+                        {p.status === 'OUT' ? t.common.outOfStock : t.common.lowStock}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {!alerts.length && (
+                  <tr>
+                    <td colSpan={6} className="empty">
+                      {t.reportsTab.emptyAlerts}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </>
   );
