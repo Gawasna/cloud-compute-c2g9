@@ -220,6 +220,7 @@ function DashboardContent({ identity }: DashboardProps) {
       minimumStock: number;
       initialStock: number;
       editId?: string;
+      imageUrl?: string | null;
     }) => {
       if (role !== 'admin') return;
 
@@ -234,6 +235,7 @@ function DashboardContent({ identity }: DashboardProps) {
           unitId: data.unitId,
           costPrice: data.costPrice,
           minimumStock: data.minimumStock,
+          imageUrl: data.imageUrl,
         }),
       });
 

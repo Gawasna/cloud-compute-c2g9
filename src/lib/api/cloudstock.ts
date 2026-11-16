@@ -17,6 +17,7 @@ export interface ApiProduct {
   cost_price: string | number;
   stock_quantity: number;
   minimum_stock: number;
+  image_url?: string | null;
 }
 
 export interface ApiCategory {
@@ -71,6 +72,7 @@ export interface ArchivedProduct {
   unit_symbol_en: string | null;
   stock_quantity: number;
   deleted_at: string;
+  image_url?: string | null;
 }
 
 export interface ArchivedResponse {

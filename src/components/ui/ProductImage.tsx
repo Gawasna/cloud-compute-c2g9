@@ -25,8 +25,12 @@ export default function ProductImage({
   size = 'md',
   className = '',
 }: ProductImageProps) {
-  const [hasError, setHasError] = useState(false);
+  const [erroredSrc, setErroredSrc] = useState<string | null>(null);
   const config = SIZES[size] || SIZES.md;
+
+  // Normalized validity: if src is empty or matches the failed src
+  const normalizedSrc = typeof src === 'string' ? src.trim() : null;
+  const hasError = !normalizedSrc || erroredSrc === normalizedSrc;
 
   const baseStyle: React.CSSProperties = {
     width: `${config.dimension}px`,
@@ -44,7 +48,7 @@ export default function ProductImage({
     transition: 'transform 0.2s ease, box-shadow 0.2s ease',
   };
 
-  if (src && !hasError) {
+  if (normalizedSrc && !hasError) {
     return (
       <span
         className={`product-image-wrap ${className}`.trim()}
@@ -52,9 +56,11 @@ export default function ProductImage({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={src}
+          src={normalizedSrc}
           alt={alt}
-          onError={() => setHasError(true)}
+          loading="lazy"
+          decoding="async"
+          onError={() => setErroredSrc(normalizedSrc)}
           style={{
             width: '100%',
             height: '100%',
@@ -66,7 +72,7 @@ export default function ProductImage({
     );
   }
 
-  // Fallback placeholder rendering with category icon or image placeholder
+  // Fallback placeholder rendering with category icon or default image placeholder
   return (
     <span
       className={`product-image-wrap product-placeholder ${className}`.trim()}

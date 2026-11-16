@@ -13,6 +13,7 @@ export interface Product {
   price: number;
   stock: number;
   minimum: number;
+  imageUrl?: string | null;
 }
 
 export interface MovementTx {
@@ -44,6 +45,7 @@ export const mapProductFromApi = (p: ApiProduct): Product => ({
   price: Number(p.cost_price),
   stock: Number(p.stock_quantity),
   minimum: Number(p.minimum_stock),
+  imageUrl: p.image_url || null,
 });
 
 export const mapMovementFromApi = (

@@ -55,12 +55,16 @@ export const POST = createApiHandler(
     const unitId = String(body.unitId || "").trim();
     const costPrice = Number(body.costPrice);
     const minimumStock = Number(body.minimumStock);
+    const imageUrl = body.imageUrl || body.image_url ? String(body.imageUrl || body.image_url).trim() : null;
 
     if (!name || name.length > 160) {
       throw new ApiError(400, "Invalid product name (maximum 160 characters)");
     }
     if (nameEn && nameEn.length > 160) {
       throw new ApiError(400, "Invalid English product name (maximum 160 characters)");
+    }
+    if (imageUrl && imageUrl.length > 500) {
+      throw new ApiError(400, "Invalid image URL (maximum 500 characters)");
     }
     if (!sku || sku.length > 40) {
       throw new ApiError(400, "Invalid SKU (maximum 40 characters)");
@@ -76,10 +80,10 @@ export const POST = createApiHandler(
     }
 
     const res = await query(
-      `insert into public.products(name, name_en, sku, category_id, unit_id, cost_price, minimum_stock)
-       values($1, $2, $3, $4, $5, $6, $7)
+      `insert into public.products(name, name_en, sku, category_id, unit_id, cost_price, minimum_stock, image_url)
+       values($1, $2, $3, $4, $5, $6, $7, $8)
        returning *`,
-      [name, nameEn, sku, categoryId, unitId, costPrice, minimumStock]
+      [name, nameEn, sku, categoryId, unitId, costPrice, minimumStock, imageUrl]
     );
 
     invalidateInventoryCaches().catch((err) => {

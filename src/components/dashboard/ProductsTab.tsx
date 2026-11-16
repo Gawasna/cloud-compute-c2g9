@@ -128,7 +128,7 @@ export default function ProductsTab({
               >
                 <td>
                   <div className="item-name">
-                    <ProductImage alt={p.name} category={p.category} size="md" />
+                    <ProductImage src={p.imageUrl} alt={p.name} category={p.category} size="md" />
                     <div>
                       <strong>{p.name}</strong>
                       {p.nameOriginal && p.nameOriginal !== p.name && (
