@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest } from "../src/index.ts";
+import worker, { handleRequest } from "../src/index.ts";
 
 /**
  * Mock implementation of Cloudflare R2Bucket
@@ -270,5 +270,83 @@ describe("Media Worker - GET /media/* Retrieval", () => {
     assert.equal(dotRes.status, 400);
     const dotBody = await dotRes.json();
     assert.equal(dotBody.error, "Invalid media key");
+  });
+});
+
+describe("Media Worker - Sentry Integration & Resilience Guard", () => {
+  it("should process worker.fetch successfully when SENTRY_DSN is absent", async () => {
+    const env = createTestEnv({ SENTRY_DSN: undefined });
+    const req = new Request("https://media-worker.local/health", { method: "GET" });
+    const res = await worker.fetch(req, env);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.status, "ok");
+  });
+
+  it("should handle unexpected error and return 500 safely without SENTRY_DSN", async () => {
+    const faultyEnv = createTestEnv({
+      SENTRY_DSN: undefined,
+      PRODUCT_MEDIA_BUCKET: {
+        async put() {
+          throw new Error("R2 connection failure simulation");
+        },
+        async get() {
+          return null;
+        },
+        async delete() {},
+      },
+    });
+
+    const mockBytes = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
+    const req = new Request("https://media-worker.local/upload", {
+      method: "POST",
+      headers: { "Content-Type": "image/webp" },
+      body: mockBytes,
+    });
+
+    const res = await worker.fetch(req, faultyEnv);
+    assert.equal(res.status, 500);
+    const body = await res.json();
+    assert.equal(body.error, "Internal Server Error");
+    assert.equal(body.message, "R2 connection failure simulation");
+  });
+
+  it("should process worker.fetch when SENTRY_DSN is configured", async () => {
+    const env = createTestEnv({
+      SENTRY_DSN: "https://dummyPublicKey@o123456.ingest.sentry.io/7891011",
+    });
+    const req = new Request("https://media-worker.local/health", { method: "GET" });
+    const res = await worker.fetch(req, env, { waitUntil() {} });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.status, "ok");
+  });
+
+  it("should capture exception and return 500 when error thrown with SENTRY_DSN configured", async () => {
+    const faultyEnv = createTestEnv({
+      SENTRY_DSN: "https://dummyPublicKey@o123456.ingest.sentry.io/7891011",
+      PRODUCT_MEDIA_BUCKET: {
+        async put() {
+          throw new Error("Fatal R2 crash with Sentry configured");
+        },
+        async get() {
+          return null;
+        },
+        async delete() {},
+      },
+    });
+
+    const mockBytes = new Uint8Array([0x52, 0x49, 0x46, 0x46]);
+    const req = new Request("https://media-worker.local/upload", {
+      method: "POST",
+      headers: { "Content-Type": "image/webp" },
+      body: mockBytes,
+    });
+
+    const res = await worker.fetch(req, faultyEnv, { waitUntil() {} });
+    assert.equal(res.status, 500);
+    const body = await res.json();
+    assert.equal(body.error, "Internal Server Error");
+    assert.equal(body.message, "Fatal R2 crash with Sentry configured");
   });
 });

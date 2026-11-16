@@ -1,6 +1,6 @@
 {
   "name": "cc-prj",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -28,6 +28,7 @@
     "swagger-ui-dist": "^5.34.1"
   },
   "devDependencies": {
+    "@sentry/cloudflare": "^9.47.2",
     "@types/node": "^22.13.0",
     "@types/pg": "^8.11.11",
     "@types/react": "^19.3.0",
