@@ -40,6 +40,46 @@ describe("Security: HTTP security headers", () => {
     const proxy = readFileSync("src/proxy.ts", "utf8");
     assert.ok(proxy.includes("/api/:path*") && proxy.includes("429"));
     assert.ok(proxy.includes('"/api/health"'), "health endpoint must stay exempt for uptime monitors");
+    assert.ok(proxy.includes('"/api/csp-report"'), "csp-report endpoint must have dedicated handling");
+  });
+  it("CSP includes report-to, report-uri, and Reporting-Endpoints header", () => {
+    const defaultCsp = buildContentSecurityPolicy(env);
+    assert.ok(defaultCsp.includes("report-to csp-endpoint"), "missing report-to directive in CSP");
+    assert.ok(defaultCsp.includes("report-uri /api/csp-report"), "missing default report-uri in CSP");
+
+    const customCsp = buildContentSecurityPolicy({ ...env, reportUri: "/custom/csp-report" });
+    assert.ok(customCsp.includes("report-to csp-endpoint"), "missing report-to directive in custom CSP");
+    assert.ok(customCsp.includes("report-uri /custom/csp-report"), "custom reportUri not respected in CSP");
+
+    const headers = Object.fromEntries(buildSecurityHeaders(env).map((h) => [h.key, h.value]));
+    assert.equal(headers["Reporting-Endpoints"], 'csp-endpoint="/api/csp-report"');
+
+    const customHeaders = Object.fromEntries(
+      buildSecurityHeaders({ ...env, reportUri: "/custom/csp-report" }).map((h) => [h.key, h.value])
+    );
+    assert.equal(customHeaders["Reporting-Endpoints"], 'csp-endpoint="/custom/csp-report"');
+  });
+  it("proxy configures /api/csp-report with CSRF bypass and writeLimiter", () => {
+    const proxy = readFileSync("src/proxy.ts", "utf8");
+    const cspIndex = proxy.indexOf('pathname === "/api/csp-report"');
+    const csrfCallIndex = proxy.indexOf("const allowed = isRequestAllowedCsrf");
+    assert.ok(cspIndex !== -1, "proxy must contain /api/csp-report handling");
+    assert.ok(csrfCallIndex !== -1, "proxy must contain CSRF checking");
+    assert.ok(cspIndex < csrfCallIndex, "/api/csp-report must precede CSRF validation to allow browser reporting");
+    assert.ok(
+      proxy.includes("writeLimiter.check(`write:${ip}`)") || proxy.includes("writeLimiter.check("),
+      "csp-report must be rate-limited by writeLimiter"
+    );
+  });
+  it("implements /api/csp-report route handler with captureLooseError and 204 response", () => {
+    const routeSrc = readFileSync("src/app/api/csp-report/route.ts", "utf8");
+    assert.ok(
+      routeSrc.includes('import { captureLooseError } from "@/lib/observability"'),
+      "route must import captureLooseError"
+    );
+    assert.ok(routeSrc.includes("export async function POST"), "route must export POST handler");
+    assert.ok(routeSrc.includes('"csp.report-to"'), 'telemetry source must be "csp.report-to"');
+    assert.ok(routeSrc.includes("status: 204"), "must return HTTP 204 No Content");
   });
   it("img-src and connect-src whitelist media worker origin without universal wildcard", () => {
     const defaultCsp = buildContentSecurityPolicy(env);

@@ -8,6 +8,7 @@ describe("Unit: Client-side Telemetry Wiring & Silent Swallowing Remediation", (
   const cloudstockApiPath = path.resolve(process.cwd(), "src/lib/api/cloudstock.ts");
   const dashboardPath = path.resolve(process.cwd(), "src/components/Dashboard.tsx");
   const sentryClientConfigPath = path.resolve(process.cwd(), "sentry.client.config.ts");
+  const clientPreprocessorPath = path.resolve(process.cwd(), "src/lib/media/client-preprocessor.ts");
 
   describe("ProductImage.tsx Telemetry Wiring", () => {
     it("should verify ProductImage imports captureLooseError", () => {
@@ -165,6 +166,33 @@ describe("Unit: Client-side Telemetry Wiring & Silent Swallowing Remediation", (
       assert.strictEqual(capturedContext.directive, "img-src");
       assert.strictEqual(capturedContext.blockedUri, "https://untrusted-cdn.com/asset.png");
       assert.strictEqual(capturedContext.lineNumber, 104);
+    });
+  });
+
+  describe("client-preprocessor.ts Telemetry Wiring", () => {
+    it("should verify client-preprocessor.ts imports captureLooseError", () => {
+      assert.ok(fs.existsSync(clientPreprocessorPath), "client-preprocessor.ts must exist");
+      const content = fs.readFileSync(clientPreprocessorPath, "utf8");
+      assert.ok(
+        content.includes("@/lib/observability") && content.includes("captureLooseError"),
+        "client-preprocessor.ts must wire captureLooseError from @/lib/observability"
+      );
+    });
+
+    it("should verify client-preprocessor.ts hooks telemetry for decode, encode, and upload", () => {
+      const content = fs.readFileSync(clientPreprocessorPath, "utf8");
+      assert.ok(
+        content.includes("media.client-preprocessor.decode"),
+        "client-preprocessor.ts must tag decode errors with media.client-preprocessor.decode"
+      );
+      assert.ok(
+        content.includes("media.client-preprocessor.encode"),
+        "client-preprocessor.ts must tag encode errors with media.client-preprocessor.encode"
+      );
+      assert.ok(
+        content.includes("media.client-preprocessor.upload"),
+        "client-preprocessor.ts must tag upload errors with media.client-preprocessor.upload"
+      );
     });
   });
 });

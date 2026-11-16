@@ -42,6 +42,25 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (pathname === "/api/health") return NextResponse.next();
 
+  // CSP reporting endpoint bypasses CSRF check (browser reports omit Sec-Fetch-Site/Origin),
+  // but still subject to write rate limiting against abuse.
+  if (pathname === "/api/csp-report") {
+    const ip = getClientIp(request.headers);
+    const result = writeLimiter.check(`write:${ip}`);
+    if (!result.allowed) {
+      return NextResponse.json(
+        { message: "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(result.retryAfter), "Cache-Control": "no-store" },
+        }
+      );
+    }
+    const response = NextResponse.next();
+    response.headers.set("X-RateLimit-Remaining", String(result.remaining));
+    return response;
+  }
+
   // 2. CSRF: cookie-authenticated, state-changing requests must come from our own origin.
   const allowed = isRequestAllowedCsrf({
     method: request.method,

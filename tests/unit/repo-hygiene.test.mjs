@@ -55,6 +55,7 @@ describe("Security: repository hygiene", () => {
     const roleExempt = new Set(["src/app/api/auth/me/route.ts"].map((p) => p.replaceAll("/", process.platform === "win32" ? "\\" : "/")));
     const open = new Set([
       "src/app/api/health/route.ts",
+      "src/app/api/csp-report/route.ts",
       "src/app/api/debug/telemetry/route.ts",
       "src/app/api/auth/login/route.ts",
       "src/app/api/auth/refresh/route.ts",

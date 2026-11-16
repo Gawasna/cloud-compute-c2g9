@@ -1,8 +1,11 @@
+import * as Sentry from "@sentry/cloudflare";
+
 export interface Env {
   PRODUCT_MEDIA_BUCKET: R2Bucket;
   ALLOWED_ORIGINS: string;
   PUBLIC_CDN_URL: string;
   UPLOAD_SECRET?: string;
+  SENTRY_DSN?: string;
 }
 
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
@@ -49,7 +52,11 @@ function jsonResponse(data: unknown, status = 200, corsHeaders: Record<string, s
   });
 }
 
-export async function handleRequest(request: Request, env: Env): Promise<Response> {
+export async function handleRequest(
+  request: Request,
+  env: Env,
+  _ctx?: ExecutionContext
+): Promise<Response> {
   const corsHeaders = getCorsHeaders(request, env);
 
   // Handle preflight requests
@@ -178,13 +185,38 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     return jsonResponse({ error: "Not Found" }, 404, corsHeaders);
   } catch (err: unknown) {
+    try {
+      if (env?.SENTRY_DSN) {
+        Sentry.captureException(err);
+      }
+    } catch {
+      // Guard against reporting failure so error response is always returned
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     return jsonResponse({ error: "Internal Server Error", message }, 500, corsHeaders);
   }
 }
 
-const worker = {
-  fetch: handleRequest,
+const baseWorker: ExportedHandler<Env> = {
+  fetch(request, env, ctx) {
+    return handleRequest(request, env, ctx);
+  },
+};
+
+const sentryWorker = Sentry.withSentry(
+  (env: Env) => ({
+    dsn: env.SENTRY_DSN,
+  }),
+  baseWorker
+);
+
+export const worker: ExportedHandler<Env> = {
+  fetch(request, env, ctx) {
+    if (env.SENTRY_DSN) {
+      return sentryWorker.fetch!(request, env, ctx);
+    }
+    return handleRequest(request, env, ctx);
+  },
 };
 
 export default worker;

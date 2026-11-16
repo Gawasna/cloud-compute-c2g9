@@ -6,6 +6,16 @@
  * prior to uploading to media storage/worker endpoints.
  */
 
+let captureLooseError: (error: unknown, context?: Record<string, unknown>) => unknown = () => {};
+// Dynamically resolve telemetry to avoid ERR_MODULE_NOT_FOUND when executed by Node native test runner
+import('@/lib/observability')
+  .then((m) => {
+    captureLooseError = m.captureLooseError;
+  })
+  .catch(() => {
+    // Resilient fallback for non-bundled environments
+  });
+
 export const MAX_IMAGE_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 export const DEFAULT_MAX_DIMENSION = 800;
 export const DEFAULT_WEBP_QUALITY = 0.82;
@@ -74,7 +84,20 @@ export async function processProductImage(
     img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('Failed to decode image data into browser memory'));
+      el.onerror = () => {
+        const error = new Error('Failed to decode image data into browser memory');
+        try {
+          captureLooseError(error, {
+            source: 'media.client-preprocessor.decode',
+            fileName: file.name,
+            fileType: file.type,
+            fileSize: file.size,
+          });
+        } catch {
+          // resilient
+        }
+        reject(error);
+      };
       el.src = objectUrl;
     });
   } finally {
@@ -122,7 +145,18 @@ export async function processProductImage(
         if (blob) {
           resolve(blob);
         } else {
-          reject(new Error('Failed to encode image to WebP format'));
+          const error = new Error('Failed to encode image to WebP format');
+          try {
+            captureLooseError(error, {
+              source: 'media.client-preprocessor.encode',
+              quality,
+              targetWidth,
+              targetHeight,
+            });
+          } catch {
+            // resilient
+          }
+          reject(error);
         }
       },
       'image/webp',
@@ -191,6 +225,17 @@ export async function uploadProductImage(
         const text = await response.text().catch(() => '');
         if (text) errorMessage = text;
       }
+      try {
+        captureLooseError(new Error(errorMessage), {
+          source: 'media.client-preprocessor.upload',
+          uploadUrl,
+          status: response.status,
+          blobSize: blob.size,
+          blobType: blob.type,
+        });
+      } catch {
+        // resilient
+      }
       return {
         success: false,
         error: errorMessage,
@@ -204,6 +249,16 @@ export async function uploadProductImage(
       key: data.key || data.id,
     };
   } catch (err) {
+    try {
+      captureLooseError(err, {
+        source: 'media.client-preprocessor.upload',
+        uploadUrl,
+        blobSize: blob.size,
+        blobType: blob.type,
+      });
+    } catch {
+      // resilient
+    }
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Network failure during media upload',

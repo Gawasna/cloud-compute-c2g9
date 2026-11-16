@@ -15,6 +15,7 @@ export interface HeaderEnv {
   supabaseUrl?: string;
   telemetryDsns?: Array<string | undefined>;
   mediaOrigins?: Array<string | undefined>;
+  reportUri?: string;
 }
 
 function originOf(value: string | undefined): string | null { 
@@ -55,6 +56,7 @@ export function buildContentSecurityPolicy(env: HeaderEnv): string {
 
   const script = ["'self'", "'unsafe-inline'", ...(env.isProd ? [] : ["'unsafe-eval'"])];
   const imgSrc = ["'self'", "data:", "blob:", ...mediaOrigins];
+  const reportUri = env.reportUri ?? "/api/csp-report";
 
   return [
     "default-src 'self'",
@@ -68,13 +70,17 @@ export function buildContentSecurityPolicy(env: HeaderEnv): string {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
+    "report-to csp-endpoint",
+    `report-uri ${reportUri}`,
     ...(env.isProd ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
 }
 
 export function buildSecurityHeaders(env: HeaderEnv): Array<{ key: string; value: string }> {
+  const reportUri = env.reportUri ?? "/api/csp-report";
   const headers = [
     { key: "Content-Security-Policy", value: buildContentSecurityPolicy(env) },
+    { key: "Reporting-Endpoints", value: `csp-endpoint="${reportUri}"` },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "X-Frame-Options", value: "DENY" },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
