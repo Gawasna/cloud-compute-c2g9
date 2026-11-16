@@ -1,0 +1,18 @@
+{
+  "name": "cc-media-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker for Product Media Storage backed by Cloudflare R2",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "type-check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.162.0"
+  }
+}

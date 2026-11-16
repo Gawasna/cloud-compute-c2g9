@@ -255,7 +255,7 @@ export default function OverviewTab({
                   <tr key={p.id}>
                     <td>
                       <div className="item-name">
-                        <ProductImage alt={p.name} category={p.category} size="sm" />
+                        <ProductImage src={p.imageUrl} alt={p.name} category={p.category} size="sm" />
                         <strong>{p.name}</strong>
                       </div>
                     </td>

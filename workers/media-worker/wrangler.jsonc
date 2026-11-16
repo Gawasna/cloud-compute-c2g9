@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cc-media-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-03-01",
+  "workers_dev": true,
+  "r2_buckets": [
+    {
+      "binding": "PRODUCT_MEDIA_BUCKET",
+      "bucket_name": "cloudstock-product-media"
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://cloud-compute-c2g9.vercel.app,http://localhost:3000",
+    "PUBLIC_CDN_URL": "https://cc-media-worker.hunglepy05.workers.dev/media"
+  }
+}

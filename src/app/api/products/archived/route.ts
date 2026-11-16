@@ -24,7 +24,7 @@ export const GET = createApiHandler(
 
     const [itemsResult, countResult] = await Promise.all([
       query(
-        `select p.id, p.name, p.name_en, p.sku, p.stock_quantity, p.deleted_at,
+        `select p.id, p.name, p.name_en, p.sku, p.stock_quantity, p.deleted_at, p.image_url,
           c.name as category_name, c.name_en as category_name_en,
           u.symbol as unit_symbol, u.symbol_en as unit_symbol_en
          ${baseQuery}

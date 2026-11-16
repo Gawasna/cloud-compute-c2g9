@@ -159,7 +159,7 @@ export default function ArchivedProductsTab({ onRestored }: ArchivedProductsTabP
                 <tr key={p.id}>
                   <td>
                     <div className="item-name">
-                      <ProductImage alt={primaryName} category={catName} size="md" />
+                      <ProductImage src={p.image_url} alt={primaryName} category={catName} size="md" />
                       <div>
                         <strong>{primaryName}</strong>
                         {secondaryName && secondaryName.trim() !== primaryName.trim() && (
