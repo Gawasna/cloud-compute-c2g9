@@ -6,7 +6,6 @@ import {
   processMediaUpload,
   MAX_UPLOAD_SIZE_BYTES,
   DEFAULT_MEDIA_WORKER_UPLOAD_URL,
-  DEFAULT_MEDIA_WORKER_BASE_URL,
   ApiError,
 } from "../../src/lib/media/upload-pipeline.ts";
 import { uploadProductImage } from "../../src/lib/media/client-preprocessor.ts";

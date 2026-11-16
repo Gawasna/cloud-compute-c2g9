@@ -108,11 +108,19 @@ export async function processMediaUpload(
   let finalUrl = data.url || "";
 
   // Normalize URL to direct worker serving endpoint: https://cc-media-worker.hunglepy05.workers.dev/media/${key}
+  let cleanBaseUrl = baseUrl;
+  while (cleanBaseUrl.endsWith("/")) {
+    cleanBaseUrl = cleanBaseUrl.slice(0, -1);
+  }
+
   if (key) {
-    const cleanKey = key.replace(/^\/+/, "");
-    finalUrl = `${baseUrl.replace(/\/+$/, "")}/${cleanKey}`;
+    let cleanKey = key;
+    while (cleanKey.startsWith("/")) {
+      cleanKey = cleanKey.slice(1);
+    }
+    finalUrl = `${cleanBaseUrl}/${cleanKey}`;
   } else if (finalUrl.includes("media.cloudstock.app")) {
-    finalUrl = finalUrl.replace("https://media.cloudstock.app", baseUrl.replace(/\/+$/, ""));
+    finalUrl = finalUrl.replace("https://media.cloudstock.app", cleanBaseUrl);
   }
 
   return {

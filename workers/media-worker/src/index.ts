@@ -128,7 +128,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         },
       });
 
-      const cdnUrl = (env.PUBLIC_CDN_URL || "").replace(/\/+$/, "");
+      let cdnUrl = env.PUBLIC_CDN_URL || "";
+      while (cdnUrl.endsWith("/")) {
+        cdnUrl = cdnUrl.slice(0, -1);
+      }
       const publicUrl = cdnUrl ? `${cdnUrl}/${key}` : `/${key}`;
 
       return jsonResponse(
