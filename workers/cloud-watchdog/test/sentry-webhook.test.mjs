@@ -162,7 +162,11 @@ describe("Sentry Webhook Ingestion & Telegram Dispatcher Tests", () => {
         assert.equal(sentBody.chat_id, mockEnv.TELEGRAM_CHAT_ID);
         assert.equal(sentBody.parse_mode, "HTML");
         assert.match(sentBody.text, /View Issue on Sentry/);
-        assert.ok(sentBody.text.includes("https://sentry.io/organizations/cc-org/issues/987654321/"));
+        const hrefMatch = sentBody.text.match(/<a href="([^"]+)">/);
+        assert.ok(hrefMatch, "Expected <a> tag in sentBody.text");
+        const linkUrl = new URL(hrefMatch[1]);
+        assert.equal(linkUrl.origin, "https://sentry.io");
+        assert.equal(linkUrl.pathname, "/organizations/cc-org/issues/987654321/");
       } finally {
         globalThis.fetch = originalFetch;
       }
