@@ -11,6 +11,7 @@ import {
 // In-memory KVNamespace mock for deterministic testing
 function createMockKv() {
   const store = new Map();
+  const optionsStore = new Map();
   return {
     async get(key, type) {
       const val = store.get(key);
@@ -24,13 +25,18 @@ function createMockKv() {
       }
       return val;
     },
-    async put(key, value) {
+    async put(key, value, options) {
       store.set(key, typeof value === "string" ? value : JSON.stringify(value));
+      if (options) {
+        optionsStore.set(key, options);
+      }
     },
     async delete(key) {
       store.delete(key);
+      optionsStore.delete(key);
     },
     _store: store,
+    _options: optionsStore,
   };
 }
 
@@ -210,6 +216,107 @@ describe("Supabase Webhook Ingestion & Latency Guard Suite", () => {
       assert.match(dispatchedBody.text, /\[SUPABASE DB EVENT\] ORDERS/);
       assert.match(dispatchedBody.text, /ord-888/);
     });
+
+    it("handleSupabaseWebhook enforces per-table rate limit (1 alert / 10 min) via KV with TTL 600s", async () => {
+      let dispatchCount = 0;
+      globalThis.fetch = async () => {
+        dispatchCount++;
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      };
+
+      const kv = createMockKv();
+      const rateLimitEnv = {
+        ...env,
+        WATCHDOG_KV: kv,
+      };
+
+      const payload = {
+        type: "INSERT",
+        table: "orders",
+        schema: "public",
+        record: { id: "ord-101", amount: 50000 },
+        old_record: null,
+      };
+
+      const makeRequest = () =>
+        new Request("https://edge.watchdog.local/api/supabase/webhook", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-supabase-token": SECRET,
+          },
+          body: JSON.stringify(payload),
+        });
+
+      // Request 1: First occurrence -> Alert dispatched, KV key written with TTL 600s
+      const res1 = await handleSupabaseWebhook(makeRequest(), rateLimitEnv);
+      assert.equal(res1.status, 200);
+      const json1 = await res1.json();
+      assert.equal(json1.ok, true);
+      assert.equal(json1.suppressed, undefined);
+      assert.equal(dispatchCount, 1, "Telegram alert must be dispatched on first call");
+
+      // Verify KV key exists and TTL was set to 600s
+      const kvVal = await kv.get("supabase:webhook:ratelimit:orders:INSERT");
+      assert.equal(kvVal, "1");
+      const kvOpts = kv._options.get("supabase:webhook:ratelimit:orders:INSERT");
+      assert.equal(kvOpts?.expirationTtl, 600, "KV rate limit TTL must be 600s");
+
+      // Request 2: Duplicate occurrence for same table and action within window -> Suppressed
+      const res2 = await handleSupabaseWebhook(makeRequest(), rateLimitEnv);
+      assert.equal(res2.status, 200);
+      const json2 = await res2.json();
+      assert.equal(json2.ok, true);
+      assert.equal(json2.suppressed, true, "Must return suppressed: true on subsequent calls");
+      assert.equal(dispatchCount, 1, "Telegram alert must NOT be dispatched when suppressed");
+
+      // Request 3: Different action (UPDATE) on same table -> Not suppressed
+      const updatePayload = { ...payload, type: "UPDATE" };
+      const reqUpdate = new Request("https://edge.watchdog.local/api/supabase/webhook", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-supabase-token": SECRET,
+        },
+        body: JSON.stringify(updatePayload),
+      });
+      const res3 = await handleSupabaseWebhook(reqUpdate, rateLimitEnv);
+      assert.equal(res3.status, 200);
+      const json3 = await res3.json();
+      assert.equal(json3.ok, true);
+      assert.equal(json3.suppressed, undefined);
+      assert.equal(dispatchCount, 2, "Different action must not be suppressed by previous action rate limit");
+    });
+
+    it("uses ctx.waitUntil for Telegram alert dispatch when ctx is provided (WE4)", async () => {
+      let waitUntilPromise = null;
+      const mockCtx = {
+        waitUntil: (p) => {
+          waitUntilPromise = p;
+        },
+      };
+
+      globalThis.fetch = async () => {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      };
+
+      const req = new Request("https://edge.watchdog.local/api/supabase/webhook", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-supabase-token": SECRET,
+        },
+        body: JSON.stringify({ type: "INSERT", table: "products" }),
+      });
+
+      const res = await handleSupabaseWebhook(req, env, mockCtx);
+      assert.equal(res.status, 200);
+      assert.notEqual(waitUntilPromise, null);
+      await waitUntilPromise;
+    });
   });
 
   describe("Test 3: evaluateSupabaseLatency Multi-Cycle Degraded & Recovery Guard", () => {
@@ -287,6 +394,56 @@ describe("Supabase Webhook Ingestion & Latency Guard Suite", () => {
       assert.equal(cycle3.shouldAlert, true);
       assert.equal(cycle3.isRecovery, true);
       assert.equal(cycle3.state.alerted_degraded, false);
+    });
+
+    it("handles gray zone latency (1000ms - 2500ms) safely without stuck counters or false alerts", async () => {
+      const kv = createMockKv();
+
+      // Step 1: Initial baseline in gray zone (1500ms) -> Silent, consecutive_degraded = 0
+      const step1 = await evaluateSupabaseLatency(1500, "connected", kv);
+      assert.equal(step1.shouldAlert, false);
+      assert.equal(step1.isRecovery, false);
+      assert.equal(step1.state.consecutive_degraded, 0);
+      assert.equal(step1.state.alerted_degraded, false);
+
+      // Step 2: One degraded spike (> 2500ms) -> consecutive_degraded = 1, shouldAlert = false
+      const step2 = await evaluateSupabaseLatency(2700, "connected", kv);
+      assert.equal(step2.shouldAlert, false);
+      assert.equal(step2.state.consecutive_degraded, 1);
+      assert.equal(step2.state.alerted_degraded, false);
+
+      // Step 3: Returns to gray zone (1800ms) -> resets consecutive_degraded to 0, remains silent
+      const step3 = await evaluateSupabaseLatency(1800, "connected", kv);
+      assert.equal(step3.shouldAlert, false);
+      assert.equal(step3.isRecovery, false);
+      assert.equal(step3.state.consecutive_degraded, 0, "Counter must reset to 0 in gray zone when not degraded");
+      assert.equal(step3.state.alerted_degraded, false);
+
+      // Step 4: Degrades across 2 consecutive cycles -> triggers degraded alert
+      await evaluateSupabaseLatency(2900, "connected", kv);
+      const step4 = await evaluateSupabaseLatency(3000, "connected", kv);
+      assert.equal(step4.shouldAlert, true);
+      assert.equal(step4.state.alerted_degraded, true);
+
+      // Step 5: Falls into gray zone (1600ms) while in alerted_degraded state -> stays silent, does not trigger premature recovery
+      const step5 = await evaluateSupabaseLatency(1600, "connected", kv);
+      assert.equal(step5.shouldAlert, false, "Must stay silent in gray zone while alerted");
+      assert.equal(step5.isRecovery, false, "Must not trigger recovery until below 1000ms");
+      assert.equal(step5.state.consecutive_degraded, 0, "Counter must be 0 when not degraded");
+      assert.equal(step5.state.alerted_degraded, true, "Remains in alerted state until true recovery");
+
+      // Step 6: Multiple cycles in gray zone (2000ms) -> remains silent
+      const step6 = await evaluateSupabaseLatency(2000, "connected", kv);
+      assert.equal(step6.shouldAlert, false);
+      assert.equal(step6.isRecovery, false);
+      assert.equal(step6.state.consecutive_degraded, 0);
+
+      // Step 7: True recovery (< 1000ms) -> Triggers recovery alert
+      const step7 = await evaluateSupabaseLatency(600, "connected", kv);
+      assert.equal(step7.shouldAlert, true);
+      assert.equal(step7.isRecovery, true);
+      assert.equal(step7.state.alerted_degraded, false);
+      assert.equal(step7.state.consecutive_degraded, 0);
     });
   });
 });

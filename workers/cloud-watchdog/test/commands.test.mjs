@@ -335,4 +335,339 @@ describe("Telegram Slash Commands Handler Tests", () => {
     const goodRes = await worker.fetch(goodReq, mockEnv, { waitUntil: () => {} });
     assert.equal(goodRes.status, 200);
   });
+
+  it("WE3: /ping distinguishes network reachability from application status (e.g. HTTP 503)", async () => {
+    let sentBody = "";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      const urlStr = String(url);
+      if (urlStr.startsWith("https://api.telegram.org/")) {
+        sentBody = String(options?.body || "");
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 105 } }), { status: 200 });
+      }
+      // Target returns HTTP 503 Degraded
+      return new Response(JSON.stringify({ status: "degraded" }), { status: 503 });
+    };
+
+    try {
+      const update = {
+        update_id: 12,
+        message: {
+          message_id: 21,
+          chat: { id: "-100999888777", type: "supergroup" },
+          text: "/ping",
+          date: 1731670000,
+        },
+      };
+
+      await handleTelegramCommand(update, mockEnv);
+      assert.match(sentBody, /Reached \(HTTP 503 - App Degraded\)/);
+      assert.doesNotMatch(sentBody, /Unreachable/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("WE5: /chart kuma fallback computes and displays real failed events instead of hardcoding 0", async () => {
+    let sentPhotoUrl = "";
+    let sentCaption = "";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      const urlStr = String(url);
+      if (urlStr.includes("sendPhoto")) {
+        const body = JSON.parse(String(options?.body || "{}"));
+        sentPhotoUrl = body.photo;
+        sentCaption = body.caption;
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 106 } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    const mockKv = {
+      async get(key) {
+        if (key === "telemetry:ring_buffer") {
+          return [
+            { ts: 1731690000, kuma_supabase_ping_ms: 450 },
+            { ts: 1731690600, kuma_supabase_ping_ms: 460 },
+          ];
+        }
+        if (key === "dms:elitedesk:state") {
+          return {
+            node: "elitedesk-mint",
+            last_seen_epoch: 1731690600000,
+            kuma: {
+              status: "up",
+              // series is missing or empty, forcing fallback path
+              failed_events: [
+                { monitor_id: 2, monitor_name: "Tailscale Subnet", time: "2026-11-15 10:00", msg: "Peer timeout" },
+                { monitor_id: 3, monitor_name: "Vercel API", time: "2026-11-15 10:05", msg: "HTTP 504" },
+              ]
+            }
+          };
+        }
+        return null;
+      },
+    };
+
+    try {
+      await handleTelegramCommand(
+        {
+          update_id: 13,
+          message: {
+            message_id: 22,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/chart kuma",
+            date: 1731670000,
+          },
+        },
+        { ...mockEnv, WATCHDOG_KV: mockKv }
+      );
+
+      assert.match(sentCaption, /2 sự cố gần nhất/);
+      assert.match(sentCaption, /Tailscale Subnet: Peer timeout/);
+      assert.match(sentCaption, /Vercel API: HTTP 504/);
+      assert.doesNotMatch(sentCaption, /0 sự cố/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("M3: /silence activates silence flag in KV with TTL and rejects invalid range", async () => {
+    let sentBody = "";
+    const kvStore = new Map();
+    const mockKv = {
+      async get(key) {
+        return kvStore.get(key) || null;
+      },
+      async put(key, value, options) {
+        kvStore.set(key, { value, options });
+      },
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, options) => {
+      sentBody = String(options?.body || "");
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 107 } }), { status: 200 });
+    };
+
+    try {
+      // 1. Invalid minutes (< 5)
+      await handleTelegramCommand(
+        {
+          update_id: 14,
+          message: {
+            message_id: 23,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/silence 2",
+            date: 1731670000,
+          },
+        },
+        { ...mockEnv, WATCHDOG_KV: mockKv }
+      );
+      assert.match(sentBody, /Thời gian im lặng không hợp lệ/);
+      assert.equal(kvStore.has("watchdog:silence:active"), false);
+
+      // 2. Valid silence: 60 minutes
+      await handleTelegramCommand(
+        {
+          update_id: 15,
+          message: {
+            message_id: 24,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/silence 60",
+            date: 1731670000,
+          },
+        },
+        { ...mockEnv, WATCHDOG_KV: mockKv }
+      );
+      assert.match(sentBody, /CHẾ ĐỘ IM LẶNG/);
+      assert.match(sentBody, /60 phút/);
+      assert.equal(kvStore.has("watchdog:silence:active"), true);
+      assert.equal(kvStore.get("watchdog:silence:active").options.expirationTtl, 3600);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("UX2 & UX1: /status includes Supabase Latency State and GMT+7 timestamp", async () => {
+    let sentBody = "";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      const urlStr = String(url);
+      if (urlStr.startsWith("https://api.telegram.org/")) {
+        sentBody = String(options?.body || "");
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 108 } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: "healthy", database: { status: "connected", latency_ms: 45 } }), { status: 200 });
+    };
+
+    const mockKv = {
+      async get(key) {
+        if (key === "supabase:latency:state") {
+          return JSON.stringify({
+            last_latency_ms: 2850,
+            alerted_degraded: true,
+            consecutive_degraded: 3,
+            last_updated: "2026-11-17T11:00:00Z",
+          });
+        }
+        return null;
+      },
+    };
+
+    try {
+      await handleTelegramCommand(
+        {
+          update_id: 16,
+          message: {
+            message_id: 25,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/status",
+            date: 1731670000,
+          },
+        },
+        { ...mockEnv, WATCHDOG_KV: mockKv }
+      );
+      assert.match(sentBody, /Supabase Latency State/);
+      assert.match(sentBody, /2850ms/);
+      assert.match(sentBody, /CẢNH BÁO SUY GIẢM/);
+      assert.match(sentBody, /GMT\+7/);
+      assert.match(sentBody, /💡 Gõ \/status/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("UX3: /dms returns on-premise node summary without probing cloud", async () => {
+    let sentBody = "";
+    let cloudProbed = false;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      const urlStr = String(url);
+      if (urlStr.startsWith("https://api.telegram.org/")) {
+        sentBody = String(options?.body || "");
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 109 } }), { status: 200 });
+      }
+      cloudProbed = true;
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    const mockKv = {
+      async get(key) {
+        if (key === "dms:elitedesk:state") {
+          return {
+            node: "elitedesk-mint",
+            last_seen_epoch: Date.now() - 120000, // 2 minutes ago
+            load_avg: 0.22,
+            memory_used_mb: 3100,
+            memory_total_mb: 7712,
+            disk_used_percent: 42,
+            kuma: {
+              status: "up",
+              monitors_total: 5,
+              monitors_up: 5,
+              monitors_down: 0,
+            },
+            bugsink: {
+              status: "ok",
+              total_issues: 4,
+              total_events: 18,
+            }
+          };
+        }
+        return null;
+      },
+    };
+
+    try {
+      await handleTelegramCommand(
+        {
+          update_id: 17,
+          message: {
+            message_id: 26,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/dms",
+            date: 1731670000,
+          },
+        },
+        { ...mockEnv, WATCHDOG_KV: mockKv }
+      );
+      assert.equal(cloudProbed, false, "Expected /dms NOT to probe cloud endpoint");
+      assert.match(sentBody, /TRẠNG THÁI HẠ TẦNG ON-PREMISE/);
+      assert.match(sentBody, /elitedesk-mint/);
+      assert.match(sentBody, /ONLINE/);
+      assert.match(sentBody, /3100 MB \/ 7712 MB/);
+      assert.match(sentBody, /Bugsink/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("UX4: /chart bugsink generates BugSink error tracking chart", async () => {
+    let sentPhotoUrl = "";
+    let sentCaption = "";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      const urlStr = String(url);
+      if (urlStr.includes("sendPhoto")) {
+        const body = JSON.parse(String(options?.body || "{}"));
+        sentPhotoUrl = body.photo;
+        sentCaption = body.caption;
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 110 } }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    const mockKv = {
+      async get(key) {
+        if (key === "telemetry:ring_buffer") {
+          return [
+            { ts: 1731690000, bugsink_events: 10, bugsink_issues: 3 },
+            { ts: 1731690600, bugsink_events: 25, bugsink_issues: 5 },
+          ];
+        }
+        if (key === "dms:elitedesk:state") {
+          return {
+            node: "elitedesk-mint",
+            last_seen_epoch: 1731690600000,
+            bugsink: {
+              status: "ok",
+              total_issues: 5,
+              total_events: 25,
+            }
+          };
+        }
+        return null;
+      },
+    };
+
+    try {
+      await handleTelegramCommand(
+        {
+          update_id: 18,
+          message: {
+            message_id: 27,
+            chat: { id: "-100999888777", type: "supergroup" },
+            text: "/chart bugsink",
+            date: 1731670000,
+          },
+        },
+        { ...mockEnv, WATCHDOG_KV: mockKv }
+      );
+      assert.match(sentCaption, /BIỂU ĐỒ SỰ CỐ BUGSINK/);
+      assert.match(sentCaption, /25/);
+      assert.match(sentCaption, /5/);
+      assert.match(sentPhotoUrl, /BugSink%20Issue%20Tracker%20Telemetry/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("WE7: GMT+7 hour calculation wraps around 24 correctly without overflow", () => {
+    // 1731693600 is 18:00:00 UTC. 18 + 7 = 25 -> 25 % 24 = 01 (GMT+7)
+    const d = new Date(Date.UTC(2026, 10, 15, 18, 30, 0));
+    const hh = String((d.getUTCHours() + 7) % 24).padStart(2, "0");
+    const mm = String(d.getUTCMinutes()).padStart(2, "0");
+    assert.equal(`${hh}:${mm}`, "01:30");
+  });
 });

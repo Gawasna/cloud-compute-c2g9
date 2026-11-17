@@ -4,6 +4,7 @@ import {
   verifySentrySecret,
   formatSentryAlert,
   handleSentryWebhook,
+  dispatchTelegramWithRetry,
 } from "../src/sentry.ts";
 
 // In-memory mock for Cloudflare KVNamespace
@@ -242,6 +243,154 @@ describe("Sentry Webhook Ingestion & Telegram Dispatcher Tests", () => {
       assert.equal(res.status, 400);
       const data = await res.json();
       assert.match(data.error, /Invalid JSON/);
+    });
+
+    it("Test 5: bypass_dedup bo qua KV deduplication va tiep tuc dispatch qua query param ?bypass_dedup=true", async () => {
+      const mockKv = createMockKv();
+      // Pre-seed KV with seen issue
+      await mockKv.put("sentry:seen:987654321", new Date().toISOString());
+      const envWithKv = { ...mockEnv, WATCHDOG_KV: mockKv };
+
+      let dispatchCount = 0;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        dispatchCount++;
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      };
+
+      try {
+        const req = new Request("https://watchdog.internal/sentry-webhook?bypass_dedup=true", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-sentry-token": mockSecret,
+          },
+          body: JSON.stringify(samplePayload),
+        });
+
+        const res = await handleSentryWebhook(req, envWithKv);
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.equal(data.ok, true);
+        assert.equal(data.dispatched, true);
+        assert.equal(data.bypass_dedup, true);
+        assert.equal(dispatchCount, 1, "Should dispatch even though key was already present in KV");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("Test 6: bypass_dedup bo qua KV deduplication va tiep tuc dispatch qua header x-bypass-dedup: true", async () => {
+      const mockKv = createMockKv();
+      await mockKv.put("sentry:seen:987654321", new Date().toISOString());
+      const envWithKv = { ...mockEnv, WATCHDOG_KV: mockKv };
+
+      let dispatchCount = 0;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        dispatchCount++;
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      };
+
+      try {
+        const req = new Request("https://watchdog.internal/sentry-webhook", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-sentry-token": mockSecret,
+            "x-bypass-dedup": "true",
+          },
+          body: JSON.stringify(samplePayload),
+        });
+
+        const res = await handleSentryWebhook(req, envWithKv);
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.equal(data.ok, true);
+        assert.equal(data.dispatched, true);
+        assert.equal(data.bypass_dedup, true);
+        assert.equal(dispatchCount, 1);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("Test 7: Exponential Backoff Retry thu lai toi da 3 lan (500ms, 1000ms, 2000ms)", async () => {
+      const delaysRecorded = [];
+      const sleepFn = async (ms) => {
+        delaysRecorded.push(ms);
+      };
+
+      let attemptCount = 0;
+      const customFetch = async () => {
+        attemptCount++;
+        if (attemptCount < 4) {
+          // Fail the first 3 attempts (initial + 2 retries)
+          return new Response("Internal Server Error", { status: 500 });
+        }
+        // Succeed on the 4th attempt (3rd retry)
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      };
+
+      const result = await dispatchTelegramWithRetry(
+        "test-token",
+        "test-chat",
+        "test-msg",
+        {
+          delaysMs: [500, 1000, 2000],
+          sleepFn,
+          fetchFn: customFetch,
+        }
+      );
+
+      assert.equal(result, true);
+      assert.equal(attemptCount, 4, "Should have made 1 initial call + 3 retries");
+      assert.deepEqual(delaysRecorded, [500, 1000, 2000]);
+    });
+
+    it("Test 8: Exponential Backoff Retry tra ve false khi ca 4 lan thu deu that bai", async () => {
+      const delaysRecorded = [];
+      const sleepFn = async (ms) => {
+        delaysRecorded.push(ms);
+      };
+
+      let attemptCount = 0;
+      const failingFetch = async () => {
+        attemptCount++;
+        throw new Error("Network offline");
+      };
+
+      const result = await dispatchTelegramWithRetry(
+        "test-token",
+        "test-chat",
+        "test-msg",
+        {
+          delaysMs: [500, 1000, 2000],
+          sleepFn,
+          fetchFn: failingFetch,
+        }
+      );
+
+      assert.equal(result, false);
+      assert.equal(attemptCount, 4);
+      assert.deepEqual(delaysRecorded, [500, 1000, 2000]);
+    });
+
+    it("Test 9: formatSentryAlert mac dinh ten du an la CloudStock khi project thieu", () => {
+      const payloadWithoutProject = {
+        issue: {
+          id: "555",
+          title: "Database Connection Pool Exhausted",
+          culprit: "src/db.ts:42",
+          permalink: "https://gawasu.sentry.io/issues/555/",
+        },
+      };
+
+      const html = formatSentryAlert(payloadWithoutProject);
+      assert.match(html, /<b>Project:<\/b> <code>CloudStock<\/code>/);
+      assert.match(html, /<b>Level:<\/b> <code>ERROR<\/code>/);
+      assert.match(html, /<b>Culprit:<\/b> <code>src\/db\.ts:42<\/code>/);
+      assert.match(html, /<a href="https:\/\/gawasu\.sentry\.io\/issues\/555\/">View Issue on Sentry<\/a>/);
     });
   });
 });

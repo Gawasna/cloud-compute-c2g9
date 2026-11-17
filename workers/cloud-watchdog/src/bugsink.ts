@@ -1,3 +1,5 @@
+import { escapeHtml } from "./notifier.ts";
+
 /**
  * ==============================================================================
  * Module: workers/cloud-watchdog/src/bugsink.ts
@@ -56,19 +58,8 @@ export function getBugsinkIssueUrl(issueId: string | number): string {
 }
 
 export interface SimpleKV {
-  get: (key: string, type?: unknown) => Promise<unknown>;
+  get: (key: string, type?: any) => Promise<any>;
   put: (key: string, value: string, options?: { expirationTtl?: number }) => Promise<void>;
-}
-
-/**
- * Escapes HTML characters for safe Telegram message rendering.
- */
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 /**
@@ -100,8 +91,8 @@ export async function evaluateBugsinkSpike(
     const currentTotal = telemetry.total_events;
     await kv.put(BUGSINK_LAST_EVENTS_KEY, String(currentTotal));
 
-    if (prevStr !== null) {
-      const prev = parseInt(prevStr, 10);
+    if (prevStr !== null && prevStr !== undefined) {
+      const prev = parseInt(String(prevStr), 10);
       if (!isNaN(prev) && currentTotal >= prev) {
         delta = currentTotal - prev;
       } else {
@@ -177,6 +168,8 @@ export function formatBugsinkSpikeAlert(
   lines.push(``);
   lines.push(`<b>Truy cập BugSink Dashboard (Tailnet-only):</b>`);
   lines.push(`<a href="${BUGSINK_DASHBOARD_URL}">${BUGSINK_DASHBOARD_URL}</a>`);
+  lines.push(``);
+  lines.push(`💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`);
   lines.push(``);
   lines.push(`<i>Dispatched by Cloudflare Edge Watchdog</i>`);
 

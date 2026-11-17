@@ -1,5 +1,6 @@
 import {
   sendTelegramAlert,
+  sendTelegramWarning,
   sendTelegramDmsAlert,
   sendTelegramDmsRecovery,
   type TelegramAlertPayload,
@@ -10,6 +11,7 @@ import {
   recordCheckin,
   appendTelemetryPoint,
   evaluateDmsTimeout,
+  DMS_STATE_KEY,
   type DmsCheckinPayload,
 } from "./dms.ts";
 import { handleSentryWebhook } from "./sentry.ts";
@@ -40,6 +42,19 @@ export interface ProbeResult {
   overallStatus?: string;
   durationMs: number;
   error?: string;
+}
+
+/**
+ * Checks whether the watchdog alert notifications are temporarily silenced via KV.
+ */
+export async function isWatchdogSilenced(kv?: KVNamespace | null): Promise<boolean> {
+  if (!kv) return false;
+  try {
+    const val = await kv.get("watchdog:silence:active");
+    return val !== null && val !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -117,7 +132,10 @@ export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
     console.log(`[Watchdog] Health pulse verified OK in ${result.durationMs}ms. DB status: ${result.dbStatus}`);
   } else {
     console.error(`[Watchdog] Health pulse permanently failed after retry: ${result.error}`);
-    if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+    const isSilenced = await isWatchdogSilenced(env.WATCHDOG_KV);
+    if (isSilenced) {
+      console.log("[Watchdog] Alert suppressed: silence mode is active");
+    } else if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
       const payload: TelegramAlertPayload = {
         service: env.ALERT_SERVICE_NAME || "Cloud Compute Prod",
         url: target,
@@ -127,7 +145,11 @@ export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
         durationMs: result.durationMs,
         timestamp: new Date().toISOString(),
       };
-      await sendTelegramAlert(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, payload);
+      if (result.statusCode === 200 && result.dbStatus !== "connected") {
+        await sendTelegramWarning(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, payload);
+      } else {
+        await sendTelegramAlert(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, payload);
+      }
     } else {
       console.warn("[Watchdog] Telegram credentials not configured. Skipping alert dispatch.");
     }
@@ -147,13 +169,29 @@ export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
     const dmsCheck = await evaluateDmsTimeout(env.WATCHDOG_KV, graceSec);
 
     if (dmsCheck.shouldAlert && dmsCheck.state && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-      console.warn(`[DMS] Triggering Dead Man's Switch alert! Node ${dmsCheck.state.node} silent for ${dmsCheck.diffSec}s`);
-      await sendTelegramDmsAlert(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, {
-        node: dmsCheck.state.node,
-        diffSec: dmsCheck.diffSec,
-        gracePeriodSec: graceSec,
-        lastSeenIso: new Date(dmsCheck.state.last_seen_epoch).toISOString(),
-      });
+      const isSilenced = await isWatchdogSilenced(env.WATCHDOG_KV);
+      if (isSilenced) {
+        console.log("[DMS] Alert suppressed: silence mode is active");
+      } else {
+        console.warn(`[DMS] Triggering Dead Man's Switch alert! Node ${dmsCheck.state.node} silent for ${dmsCheck.diffSec}s`);
+        await sendTelegramDmsAlert(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, {
+          node: dmsCheck.state.node,
+          diffSec: dmsCheck.diffSec,
+          gracePeriodSec: graceSec,
+          lastSeenIso: new Date(dmsCheck.state.last_seen_epoch).toISOString(),
+        });
+      }
+    } else if (dmsCheck.state && !dmsCheck.silent && dmsCheck.state.alerted_down) {
+      console.log(`[DMS] Cloud-side recovery detected for node: ${dmsCheck.state.node}`);
+      dmsCheck.state.alerted_down = false;
+      await env.WATCHDOG_KV.put(DMS_STATE_KEY, JSON.stringify(dmsCheck.state));
+      if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        await sendTelegramDmsRecovery(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, {
+          node: dmsCheck.state.node,
+          uptimeKuma: dmsCheck.state.uptime_kuma,
+          loadAvg: dmsCheck.state.load_avg,
+        });
+      }
     }
 
     // 5. Evaluate Supabase Latency Degradation & Recovery
@@ -165,19 +203,25 @@ export async function handleWatchdogPulse(env: Env): Promise<ProbeResult> {
       );
       if (latencyCheck.shouldAlert && latencyCheck.alertPayload && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
         const isRecovery = latencyCheck.isRecovery;
-        const msg = isRecovery
-          ? `<b>[SUPABASE RECOVERED]</b> Độ trễ Database đã phục hồi về mức danh định!\n• Độ trễ: <code>${result.dbLatencyMs}ms</code>\n• Trạng thái: <code>${result.dbStatus || "connected"}</code>`
-          : `<b>[WARNING ALERT] Phát Hiện Suy Giảm Hiệu Năng Supabase DB!</b>\n• Độ trễ hiện tại: <code>${result.dbLatencyMs}ms</code> (vượt ngưỡng 2500ms)\n• Trạng thái: <code>${result.dbStatus || "disconnected"}</code>\n• Số chu kỳ suy giảm: <code>${latencyCheck.state.consecutive_degraded}</code>`;
+        const isSilenced = await isWatchdogSilenced(env.WATCHDOG_KV);
+        if (!isRecovery && isSilenced) {
+          console.log("[Supabase] Latency alert suppressed: silence mode is active");
+        } else {
+          const msg = isRecovery
+            ? `<b>[SUPABASE RECOVERED]</b> Độ trễ Database đã phục hồi về mức danh định!\n• Độ trễ: <code>${result.dbLatencyMs}ms</code>\n• Trạng thái: <code>${result.dbStatus || "connected"}</code>`
+            : `<b>[WARNING ALERT] Phát Hiện Suy Giảm Hiệu Năng Supabase DB!</b>\n• Độ trễ hiện tại: <code>${result.dbLatencyMs}ms</code> (vượt ngưỡng 2500ms)\n• Trạng thái: <code>${result.dbStatus || "disconnected"}</code>\n• Số chu kỳ suy giảm: <code>${latencyCheck.state.consecutive_degraded}</code>\n\n💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`;
 
-        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: env.TELEGRAM_CHAT_ID,
-            text: msg,
-            parse_mode: "HTML",
-          }),
-        }).catch((err) => console.error("[Watchdog] Failed to dispatch Supabase latency alert:", err));
+          await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: env.TELEGRAM_CHAT_ID,
+              text: msg,
+              parse_mode: "HTML",
+              disable_notification: isRecovery ? true : false,
+            }),
+          }).catch((err) => console.error("[Watchdog] Failed to dispatch Supabase latency alert:", err));
+        }
       }
     }
   }
@@ -195,16 +239,22 @@ const worker = {
 
     // 1. Dead Man's Switch Check-in (Inverted Heartbeat from HP EliteDesk Node)
     if (url.pathname === "/api/dms/checkin" && request.method === "POST") {
-      if (env.DMS_SECRET_TOKEN) {
-        const authHeader = request.headers.get("authorization");
-        const authorized = await verifyDmsToken(authHeader, env.DMS_SECRET_TOKEN);
-        if (!authorized) {
-          console.warn("[DMS] Unauthorized check-in attempt: invalid token");
-          return new Response(JSON.stringify({ error: "Unauthorized" }), {
-            status: 401,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
+      if (!env.DMS_SECRET_TOKEN || typeof env.DMS_SECRET_TOKEN !== "string" || env.DMS_SECRET_TOKEN.trim() === "") {
+        console.error("[DMS] DMS_SECRET_TOKEN is not configured or empty");
+        return new Response(JSON.stringify({ error: "Service Unavailable: auth not configured" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const authHeader = request.headers.get("authorization");
+      const authorized = await verifyDmsToken(authHeader, env.DMS_SECRET_TOKEN);
+      if (!authorized) {
+        console.warn("[DMS] Unauthorized check-in attempt: invalid token");
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (!env.WATCHDOG_KV) {
@@ -251,22 +301,27 @@ const worker = {
           const spikeThreshold = parseInt(env.BUGSINK_SPIKE_THRESHOLD || "15", 10);
           const spikeCheck = await evaluateBugsinkSpike(payload.bugsink, env.WATCHDOG_KV, spikeThreshold);
           if (spikeCheck.isSpike && env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-            const alertText = formatBugsinkSpikeAlert(payload.bugsink, spikeCheck.delta);
-            const sendAlert = fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                chat_id: env.TELEGRAM_CHAT_ID,
-                text: alertText,
-                parse_mode: "HTML",
-                disable_web_page_preview: true,
-              }),
-            }).catch((err) => console.error("[DMS] Failed to dispatch BugSink spike alert:", err));
-
-            if (ctx && typeof ctx.waitUntil === "function") {
-              ctx.waitUntil(sendAlert);
+            const isSilenced = await isWatchdogSilenced(env.WATCHDOG_KV);
+            if (isSilenced) {
+              console.log("[BugSink] Spike alert suppressed: silence mode is active");
             } else {
-              await sendAlert;
+              const alertText = formatBugsinkSpikeAlert(payload.bugsink, spikeCheck.delta);
+              const sendAlert = fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  chat_id: env.TELEGRAM_CHAT_ID,
+                  text: alertText,
+                  parse_mode: "HTML",
+                  disable_web_page_preview: true,
+                }),
+              }).catch((err) => console.error("[DMS] Failed to dispatch BugSink spike alert:", err));
+
+              if (ctx && typeof ctx.waitUntil === "function") {
+                ctx.waitUntil(sendAlert);
+              } else {
+                await sendAlert;
+              }
             }
           }
         }
@@ -329,7 +384,7 @@ const worker = {
 
     // 4. Supabase Database Webhook Ingestion
     if ((url.pathname === "/api/supabase-webhook" || url.pathname === "/api/supabase/webhook") && request.method === "POST") {
-      return handleSupabaseWebhook(request, env);
+      return handleSupabaseWebhook(request, env, ctx);
     }
 
     // 5. Manual on-demand probe trigger

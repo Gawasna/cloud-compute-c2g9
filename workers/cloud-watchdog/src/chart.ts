@@ -83,7 +83,7 @@ export function generateCloudChartUrl(buffer: TelemetryPoint[]): string {
 
   const labels = cloudPoints.map((p) => {
     const d = new Date(p.ts * 1000);
-    const hh = String(d.getUTCHours() + 7).padStart(2, "0"); // GMT+7
+    const hh = String((d.getUTCHours() + 7) % 24).padStart(2, "0"); // GMT+7
     const mm = String(d.getUTCMinutes()).padStart(2, "0");
     return `${hh}:${mm}`;
   });
@@ -159,7 +159,7 @@ export function generateNodeChartUrl(buffer: TelemetryPoint[], totalRamMb = 7712
 
   const labels = hpPoints.map((p) => {
     const d = new Date(p.ts * 1000);
-    const hh = String(d.getUTCHours() + 7).padStart(2, "0"); // GMT+7
+    const hh = String((d.getUTCHours() + 7) % 24).padStart(2, "0"); // GMT+7
     const mm = String(d.getUTCMinutes()).padStart(2, "0");
     return `${hh}:${mm}`;
   });
@@ -333,7 +333,7 @@ export function generateKumaChartUrl(
 
   const labels = points.map((p) => {
     const d = new Date(p.ts * 1000);
-    const hh = String(d.getUTCHours() + 7).padStart(2, "0"); // GMT+7
+    const hh = String((d.getUTCHours() + 7) % 24).padStart(2, "0"); // GMT+7
     const mm = String(d.getUTCMinutes()).padStart(2, "0");
     return `${hh}:${mm}`;
   });
@@ -397,4 +397,90 @@ export function generateKumaChartUrl(
 
   const encodedFallback = encodeURIComponent(JSON.stringify(fallbackConfig));
   return `https://quickchart.io/chart?bkg=%230f172a&w=600&h=300&c=${encodedFallback}`;
+}
+
+/**
+ * Constructs a QuickChart.io image URL rendering BugSink Error Tracking:
+ * Total Events vs Unresolved Issues count over time from Ring Buffer.
+ */
+export function generateBugsinkChartUrl(buffer: TelemetryPoint[]): string {
+  if (!buffer || buffer.length === 0) {
+    return "https://quickchart.io/chart?bkg=%230f172a&w=650&h=320&c=%7B%22type%22%3A%22line%22%2C%22data%22%3A%7B%22labels%22%3A%5B%5D%2C%22datasets%22%3A%5B%5D%7D%2C%22options%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22No+BugSink+Data+Available%22%2C%22fontColor%22%3A%22%23ffffff%22%7D%7D%7D";
+  }
+
+  const bugPoints = buffer.filter((p) => p.bugsink_events !== undefined || p.bugsink_issues !== undefined).slice(-24);
+  if (bugPoints.length === 0) {
+    return "https://quickchart.io/chart?bkg=%230f172a&w=650&h=320&c=%7B%22type%22%3A%22line%22%2C%22data%22%3A%7B%22labels%22%3A%5B%5D%2C%22datasets%22%3A%5B%5D%7D%2C%22options%22%3A%7B%22title%22%3A%7B%22display%22%3Atrue%2C%22text%22%3A%22No+BugSink+Telemetry+Available%22%2C%22fontColor%22%3A%22%23ffffff%22%7D%7D%7D";
+  }
+
+  const labels = bugPoints.map((p) => {
+    const d = new Date(p.ts * 1000);
+    const hh = String((d.getUTCHours() + 7) % 24).padStart(2, "0"); // GMT+7
+    const mm = String(d.getUTCMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
+  });
+
+  const eventsData = bugPoints.map((p) => p.bugsink_events ?? null);
+  const issuesData = bugPoints.map((p) => p.bugsink_issues ?? null);
+
+  const chartConfig = {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Total Events",
+          data: eventsData,
+          borderColor: "#ef4444",
+          backgroundColor: "rgba(239, 68, 68, 0.08)",
+          yAxisID: "y",
+          fill: true,
+          tension: 0.25,
+          pointRadius: 3,
+        },
+        {
+          label: "Unresolved Issues",
+          data: issuesData,
+          borderColor: "#f59e0b",
+          backgroundColor: "transparent",
+          yAxisID: "y1",
+          borderDash: [4, 4],
+          tension: 0.25,
+          pointRadius: 3,
+        },
+      ],
+    },
+    options: {
+      title: {
+        display: true,
+        text: "BugSink Issue Tracker Telemetry (On-Premise HP Node)",
+        fontColor: "#ffffff",
+      },
+      legend: {
+        labels: { fontColor: "#cbd5e1" },
+      },
+      scales: {
+        xAxes: [{ ticks: { fontColor: "#94a3b8" }, gridLines: { color: "rgba(255,255,255,0.05)" } }],
+        yAxes: [
+          {
+            id: "y",
+            position: "left",
+            scaleLabel: { display: true, labelString: "Total Events", fontColor: "#ef4444" },
+            ticks: { fontColor: "#ef4444", beginAtZero: true },
+            gridLines: { color: "rgba(255,255,255,0.05)" },
+          },
+          {
+            id: "y1",
+            position: "right",
+            scaleLabel: { display: true, labelString: "Unresolved Issues", fontColor: "#f59e0b" },
+            ticks: { fontColor: "#f59e0b", beginAtZero: true },
+            gridLines: { display: false },
+          },
+        ],
+      },
+    },
+  };
+
+  const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
+  return `https://quickchart.io/chart?bkg=%230f172a&w=650&h=320&c=${encodedConfig}`;
 }

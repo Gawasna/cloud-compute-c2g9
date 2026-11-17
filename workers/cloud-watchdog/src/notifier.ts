@@ -19,13 +19,18 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+export interface TelegramAlertOptions {
+  disableNotification?: boolean;
+}
+
 /**
  * Dispatches an alert message to Telegram via Bot API sendMessage using HTML format.
  */
 export async function sendTelegramAlert(
   botToken: string,
   chatId: string,
-  alert: TelegramAlertPayload
+  alert: TelegramAlertPayload,
+  options?: TelegramAlertOptions
 ): Promise<boolean> {
   const endpoint = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
@@ -46,6 +51,8 @@ export async function sendTelegramAlert(
     `<b>Error Detail:</b> <code>${errorDisplay}</code>`,
     `<b>Timestamp:</b> <code>${alert.timestamp}</code>`,
     ``,
+    `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
+    ``,
     `<i>Dispatched by Cloudflare Edge Watchdog</i>`,
   ].join("\n");
 
@@ -58,6 +65,7 @@ export async function sendTelegramAlert(
         text: htmlMessage,
         parse_mode: "HTML",
         disable_web_page_preview: true,
+        disable_notification: options?.disableNotification ?? false,
       }),
       signal: AbortSignal.timeout(5000),
     });
@@ -70,6 +78,65 @@ export async function sendTelegramAlert(
     return true;
   } catch (err: unknown) {
     console.error("[Notifier] Network error sending Telegram alert:", err);
+    return false;
+  }
+}
+
+/**
+ * Dispatches a warning alert message to Telegram via Bot API sendMessage using HTML format.
+ */
+export async function sendTelegramWarning(
+  botToken: string,
+  chatId: string,
+  alert: TelegramAlertPayload,
+  options?: TelegramAlertOptions
+): Promise<boolean> {
+  const endpoint = `https://api.telegram.org/bot${botToken}/sendMessage`;
+
+  const statusDisplay = alert.statusCode !== undefined ? `${alert.statusCode}` : "200";
+  const dbDisplay = alert.dbStatus || "DISCONNECTED";
+  const errorDisplay = alert.error ? escapeHtml(alert.error) : "Database degraded / disconnected";
+  const serviceDisplay = escapeHtml(alert.service);
+  const urlDisplay = escapeHtml(alert.url);
+
+  const htmlMessage = [
+    `<b>[WARNING ALERT] ${serviceDisplay}</b>`,
+    ``,
+    `<b>Service State:</b> Degraded`,
+    `<b>Target:</b> <code>${urlDisplay}</code>`,
+    `<b>HTTP Status:</b> <code>${statusDisplay}</code>`,
+    `<b>DB Status:</b> <code>${dbDisplay}</code>`,
+    `<b>Response Time:</b> <code>${alert.durationMs}ms</code>`,
+    `<b>Error Detail:</b> <code>${errorDisplay}</code>`,
+    `<b>Timestamp:</b> <code>${alert.timestamp}</code>`,
+    ``,
+    `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
+    ``,
+    `<i>Dispatched by Cloudflare Edge Watchdog</i>`,
+  ].join("\n");
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: htmlMessage,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        disable_notification: options?.disableNotification ?? false,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[Notifier] Telegram send warning failed with status ${res.status}: ${errText}`);
+      return false;
+    }
+    return true;
+  } catch (err: unknown) {
+    console.error("[Notifier] Network error sending Telegram warning:", err);
     return false;
   }
 }
@@ -96,6 +163,9 @@ export async function sendTelegramDmsAlert(
     `<b>Check-in lần cuối:</b> <code>${info.lastSeenIso}</code>`,
     ``,
     `<i>Cảnh báo: Máy chủ HP EliteDesk có thể đã mất điện, rớt mạng LAN hoặc treo hệ điều hành.</i>`,
+    ``,
+    `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
+    ``,
     `<i>Dispatched by Cloudflare Edge Watchdog</i>`,
   ].join("\n");
 
@@ -149,6 +219,7 @@ export async function sendTelegramDmsRecovery(
         text: htmlMessage,
         parse_mode: "HTML",
         disable_web_page_preview: true,
+        disable_notification: true,
       }),
       signal: AbortSignal.timeout(5000),
     });

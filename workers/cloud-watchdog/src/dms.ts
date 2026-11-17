@@ -111,6 +111,10 @@ export async function verifyDmsToken(
 
 /**
  * Records a check-in from the on-premise node and updates the telemetry buffer.
+ * Invariant (M7): recordCheckin() only records node health snapshot and passive metrics
+ * into the telemetry ring buffer. It deliberately does not perform BugSink spike evaluation
+ * or write to BugSink KV keys (BUGSINK_LAST_EVENTS_KEY, BUGSINK_SPIKE_ALERTED_KEY) to avoid
+ * race conditions and duplicate KV writes with external handler evaluateBugsinkSpike().
  */
 export async function recordCheckin(
   kv: KVNamespace,
@@ -214,8 +218,13 @@ export async function evaluateDmsTimeout(
     if (!state.alerted_down) {
       // Transition from UP to DOWN: flag as alerted to prevent spamming
       state.alerted_down = true;
-      await kv.put(DMS_STATE_KEY, JSON.stringify(state));
-      return { silent: true, diffSec, state, shouldAlert: true };
+      try {
+        await kv.put(DMS_STATE_KEY, JSON.stringify(state));
+        return { silent: true, diffSec, state, shouldAlert: true };
+      } catch (err: unknown) {
+        console.error("[DMS] Failed to persist alerted_down state to KV:", err);
+        return { silent: true, diffSec, state, shouldAlert: false };
+      }
     }
     return { silent: true, diffSec, state, shouldAlert: false };
   }

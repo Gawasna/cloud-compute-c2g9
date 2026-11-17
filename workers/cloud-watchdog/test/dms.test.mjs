@@ -121,6 +121,28 @@ describe("Dead Man's Switch (DMS) & Token Verification Tests", () => {
     assert.equal(check3.shouldAlert, false);
   });
 
+  it("evaluateDmsTimeout suppresses alert and logs error if kv.put fails when transitioning to alerted_down (WE2)", async () => {
+    const kv = createMockKv();
+    const now = Date.now();
+    await kv.put(
+      DMS_STATE_KEY,
+      JSON.stringify({
+        node: "elitedesk-mint",
+        last_seen_epoch: now - 1500 * 1000,
+        alerted_down: false,
+      })
+    );
+
+    // Override put to simulate KV failure
+    kv.put = async () => {
+      throw new Error("KV outage: write failed");
+    };
+
+    const check = await evaluateDmsTimeout(kv, 1200);
+    assert.equal(check.silent, true);
+    assert.equal(check.shouldAlert, false);
+  });
+
   it("appendTelemetryPoint maintains rolling ring buffer capped at max points", async () => {
     const kv = createMockKv();
 
@@ -238,6 +260,44 @@ describe("Kuma Telemetry Ingestion Tests", () => {
 });
 
 describe("POST /api/dms/checkin HTTP Handler Tests", () => {
+  it("fails closed with 503 when DMS_SECRET_TOKEN is not configured or empty (WE6)", async () => {
+    const req = new Request("http://localhost/api/dms/checkin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: "Bearer some_token",
+      },
+      body: JSON.stringify({ node: "elitedesk-mint" }),
+    });
+
+    // 1. Missing DMS_SECRET_TOKEN
+    const resNoToken = await worker.fetch(req, {
+      DEFAULT_HEALTH_ENDPOINT: "https://example.com/api/health",
+      WATCHDOG_KV: createMockKv(),
+    });
+    assert.equal(resNoToken.status, 503);
+    const jsonNoToken = await resNoToken.json();
+    assert.deepEqual(jsonNoToken, { error: "Service Unavailable: auth not configured" });
+
+    // 2. Empty DMS_SECRET_TOKEN
+    const resEmptyToken = await worker.fetch(req, {
+      DEFAULT_HEALTH_ENDPOINT: "https://example.com/api/health",
+      DMS_SECRET_TOKEN: "",
+      WATCHDOG_KV: createMockKv(),
+    });
+    assert.equal(resEmptyToken.status, 503);
+    const jsonEmptyToken = await resEmptyToken.json();
+    assert.deepEqual(jsonEmptyToken, { error: "Service Unavailable: auth not configured" });
+
+    // 3. Whitespace DMS_SECRET_TOKEN
+    const resWhitespaceToken = await worker.fetch(req, {
+      DEFAULT_HEALTH_ENDPOINT: "https://example.com/api/health",
+      DMS_SECRET_TOKEN: "   ",
+      WATCHDOG_KV: createMockKv(),
+    });
+    assert.equal(resWhitespaceToken.status, 503);
+  });
+
   it("rejects unauthorized requests with 401 when token is missing or wrong", async () => {
     const env = {
       DEFAULT_HEALTH_ENDPOINT: "https://example.com/api/health",

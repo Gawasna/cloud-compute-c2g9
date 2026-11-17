@@ -6,8 +6,25 @@ import {
   generateCloudChartUrl,
   generateNodeChartUrl,
   generateKumaChartUrl,
+  generateBugsinkChartUrl,
 } from "./chart.ts";
 import { sendTelegramPhoto, escapeHtml } from "./notifier.ts";
+
+export const WATCHDOG_SILENCE_KEY = "watchdog:silence:active";
+
+/**
+ * Formats a given epoch millisecond timestamp into GMT+7 (Asia/Ho_Chi_Minh) readable string.
+ */
+export function formatGmt7String(epochMs: number = Date.now()): string {
+  const d = new Date(epochMs + 7 * 3600 * 1000);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const min = String(d.getUTCMinutes()).padStart(2, "0");
+  const ss = String(d.getUTCSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss} (GMT+7)`;
+}
 
 export interface TelegramChat {
   id: number | string;
@@ -106,6 +123,21 @@ export async function handleTelegramCommand(
     const cloudStatusText = probe.ok ? "HOẠT ĐỘNG BÌNH THƯỜNG" : "CẢNH BÁO / BẤT THƯỜNG";
     const dbDisplay = escapeHtml(probe.dbStatus || "disconnected");
 
+    // Supabase Latency State from KV (UX2)
+    let supabaseLatencyText = "";
+    if (env.WATCHDOG_KV) {
+      try {
+        const rawLatency = await env.WATCHDOG_KV.get("supabase:latency:state");
+        if (rawLatency) {
+          const sState = typeof rawLatency === "string" ? JSON.parse(rawLatency) : rawLatency;
+          const stateBadge = sState.alerted_degraded ? "CẢNH BÁO SUY GIẢM" : "BÌNH THƯỜNG";
+          supabaseLatencyText = `• <b>Supabase Latency State:</b> <code>${sState.last_latency_ms ?? "N/A"}ms</code> (${stateBadge})`;
+        }
+      } catch {
+        // Safe fallback if parsing fails
+      }
+    }
+
     // 2. Query On-Premise DMS state from KV
     let onPremText = "Chưa cấu hình KV hoặc chưa có bản ghi check-in.";
     let summaryText = "";
@@ -122,6 +154,7 @@ export async function handleTelegramCommand(
         const diffMin = Math.round(diffSec / 60);
         const isUp = diffSec <= graceSec;
         const statusBadge = isUp ? "ONLINE (Đang kết nối)" : "OFFLINE / MẤT TÍN HIỆU";
+        const lastSeenFormatted = formatGmt7String(dms.last_seen_epoch);
 
         let kumaDetail = `• <b>Uptime Kuma:</b> <code>${escapeHtml(dms.uptime_kuma || "up")}</code>`;
         if (dms.kuma) {
@@ -144,7 +177,7 @@ export async function handleTelegramCommand(
 
         onPremText = [
           `• <b>Node:</b> <code>${escapeHtml(dms.node)}</code> (${statusBadge})`,
-          `• <b>Check-in lần cuối:</b> <code>${diffMin} phút trước (${diffSec}s)</code>`,
+          `• <b>Check-in lần cuối:</b> <code>${diffMin} phút trước (${diffSec}s)</code> [${lastSeenFormatted}]`,
           kumaDetail,
           formatBugsinkSummary(dms.bugsink),
           `• <b>Load Average:</b> <code>${dms.load_avg ?? "N/A"}</code> | <b>RAM:</b> <code>${dms.memory_used_mb ?? "N/A"}MB</code>`,
@@ -162,25 +195,150 @@ export async function handleTelegramCommand(
       }
     }
 
-    const reply = [
-      `<b>[HỆ THỐNG GIÁM SÁT TOÀN DIỆN]</b>`,
-      `Dịch vụ: <b>${serviceName}</b>`,
-      ``,
+    const cloudBlock = [
       `<b>1. Cụm Đám Mây (Vercel & Supabase):</b>`,
       `• <b>Trạng thái:</b> ${cloudStatusText}`,
       `• <b>HTTP Status:</b> <code>${probe.statusCode ?? "TIMEOUT"}</code>`,
       `• <b>Database:</b> <code>${dbDisplay}</code>`,
       `• <b>Độ trễ:</b> <code>${probe.durationMs}ms</code>`,
+    ];
+    if (supabaseLatencyText) {
+      cloudBlock.push(supabaseLatencyText);
+    }
+
+    const reply = [
+      `<b>[HỆ THỐNG GIÁM SÁT TOÀN DIỆN]</b>`,
+      `Dịch vụ: <b>${serviceName}</b>`,
+      ``,
+      ...cloudBlock,
       ``,
       `<b>2. Cụm On-Premise (HP EliteDesk DMS):</b>`,
       onPremText,
       summaryText,
       ``,
-      `<i>Thời điểm đánh giá: ${new Date().toISOString()}</i>`,
+      `<i>Thời điểm đánh giá: ${formatGmt7String()}</i>`,
+      ``,
+      `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
     ].join("\n");
 
     await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, reply);
-  } else if (command === "/chart" || command === "/chart_kuma" || command === "/chart_node" || command === "/chart_cloud") {
+  } else if (command === "/dms") {
+    // UX3: Fast overview of on-premise node status without probing cloud
+    console.log(`[Commands] Executing /dms for chat ${chatId}`);
+
+    if (!env.WATCHDOG_KV) {
+      await sendTelegramReply(
+        env.TELEGRAM_BOT_TOKEN,
+        chatId,
+        "Lưu trữ KV chưa được cấu hình. Không thể truy vấn trạng thái DMS."
+      );
+      return;
+    }
+
+    const dms = await getDmsState(env.WATCHDOG_KV);
+    if (!dms) {
+      await sendTelegramReply(
+        env.TELEGRAM_BOT_TOKEN,
+        chatId,
+        "<b>[HẠ TẦNG ON-PREMISE (DMS)]</b>\nChưa có bản ghi check-in nào từ máy chủ On-Premise."
+      );
+      return;
+    }
+
+    const graceSec = parseInt(env.DMS_GRACE_PERIOD_SEC || "1200", 10);
+    const now = Date.now();
+    const diffSec = Math.floor((now - dms.last_seen_epoch) / 1000);
+    const diffMin = Math.round(diffSec / 60);
+    const isUp = diffSec <= graceSec;
+    const statusBadge = isUp ? "ONLINE (Đang kết nối)" : "OFFLINE / MẤT TÍN HIỆU";
+    const lastSeenFormatted = formatGmt7String(dms.last_seen_epoch);
+
+    let kumaDetail = `• <b>Uptime Kuma:</b> <code>${escapeHtml(dms.uptime_kuma || "up")}</code>`;
+    if (dms.kuma) {
+      const k = dms.kuma;
+      const uptimeStr = k.uptime_24h_percent !== undefined ? ` (${k.uptime_24h_percent}% 24h)` : "";
+      const lines = [
+        `• <b>Uptime Kuma:</b> <code>${k.monitors_up}/${k.monitors_total} UP</code>${uptimeStr}`,
+      ];
+      if (k.supabase_db_ping_ms !== undefined) {
+        lines.push(`  - Supabase DB: <code>${k.supabase_db_ping_ms}ms</code>`);
+      }
+      if (k.vercel_api_ping_ms !== undefined) {
+        lines.push(`  - Vercel Health: <code>${k.vercel_api_ping_ms}ms</code>`);
+      }
+      if (k.internet_uplink_ping_ms !== undefined) {
+        lines.push(`  - Uplink (1.1.1.1): <code>${k.internet_uplink_ping_ms}ms</code>`);
+      }
+      kumaDetail = lines.join("\n");
+    }
+
+    const reply = [
+      `<b>[TRẠNG THÁI HẠ TẦNG ON-PREMISE (HP ELITEDESK)]</b>`,
+      `• <b>Node định danh:</b> <code>${escapeHtml(dms.node)}</code> (${statusBadge})`,
+      `• <b>Check-in lần cuối:</b> <code>${diffMin} phút trước (${diffSec}s)</code> [${lastSeenFormatted}]`,
+      kumaDetail,
+      formatBugsinkSummary(dms.bugsink),
+      `• <b>CPU Load Avg:</b> <code>${dms.load_avg ?? "N/A"}</code>`,
+      `• <b>RAM sử dụng:</b> <code>${dms.memory_used_mb ?? "N/A"} MB / ${dms.memory_total_mb ?? 7712} MB</code>`,
+      `• <b>Dung lượng Disk:</b> <code>${dms.disk_used_percent ?? "N/A"}%</code>`,
+      ``,
+      `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
+    ].join("\n");
+
+    await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, reply);
+  } else if (command === "/silence") {
+    // M3: Silence alert notifications for given minutes [5, 240], default 30
+    console.log(`[Commands] Executing /silence for chat ${chatId}`);
+
+    if (!env.WATCHDOG_KV) {
+      await sendTelegramReply(
+        env.TELEGRAM_BOT_TOKEN,
+        chatId,
+        "Lưu trữ KV chưa được cấu hình. Không thể kích hoạt chế độ im lặng."
+      );
+      return;
+    }
+
+    let minutes = 30;
+    if (parts[1]) {
+      const parsed = parseInt(parts[1], 10);
+      if (isNaN(parsed) || parsed < 5 || parsed > 240) {
+        await sendTelegramReply(
+          env.TELEGRAM_BOT_TOKEN,
+          chatId,
+          "Thời gian im lặng không hợp lệ. Vui lòng nhập số phút trong dải [5, 240] (mặc định: 30 phút).\nVí dụ: <code>/silence 60</code>"
+        );
+        return;
+      }
+      minutes = parsed;
+    }
+
+    const expirationTtl = minutes * 60;
+    const expireAtEpoch = Date.now() + expirationTtl * 1000;
+    const expireTimeStr = formatGmt7String(expireAtEpoch);
+
+    await env.WATCHDOG_KV.put(WATCHDOG_SILENCE_KEY, String(expireAtEpoch), {
+      expirationTtl,
+    });
+
+    const reply = [
+      `<b>[CHẾ ĐỘ IM LẶNG - SILENCE ACTIVATED]</b>`,
+      ``,
+      `Chế độ im lặng đã được kích hoạt trong <b>${minutes} phút</b>.`,
+      `Tất cả thông báo cảnh báo định kỳ và phát hiện bất thường sẽ tạm dừng gửi cho đến:`,
+      `<code>${expireTimeStr}</code>`,
+      ``,
+      `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
+    ].join("\n");
+
+    await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, reply);
+  } else if (
+    command === "/chart" ||
+    command === "/chart_kuma" ||
+    command === "/chart_node" ||
+    command === "/chart_cloud" ||
+    command === "/chart_bugsink"
+  ) {
     console.log(`[Commands] Executing ${command} for chat ${chatId}`);
 
     if (!env.WATCHDOG_KV) {
@@ -205,10 +363,27 @@ export async function handleTelegramCommand(
     const subcmd = parts[1]?.toLowerCase();
     const isKumaMode = subcmd === "kuma" || command === "/chart_kuma";
     const isNodeMode = subcmd === "node" || subcmd === "hp" || command === "/chart_node";
+    const isBugsinkMode = subcmd === "bugsink" || command === "/chart_bugsink";
     let chartUrl: string;
     let caption: string;
 
-    if (isKumaMode) {
+    if (isBugsinkMode) {
+      // UX4: Render BugSink error chart from ring buffer
+      chartUrl = generateBugsinkChartUrl(buffer);
+      const dms = await getDmsState(env.WATCHDOG_KV);
+      const issuesDisplay = dms?.bugsink?.total_issues !== undefined ? String(dms.bugsink.total_issues) : "N/A";
+      const eventsDisplay = dms?.bugsink?.total_events !== undefined ? String(dms.bugsink.total_events) : "N/A";
+
+      caption = [
+        `<b>[BIỂU ĐỒ SỰ CỐ BUGSINK (ON-PREMISE)]</b>`,
+        `Dữ liệu từ chu kỳ kiểm tra ring buffer HP Node:`,
+        `• <b>Tổng sự kiện lỗi (Events):</b> <code>${eventsDisplay}</code>`,
+        `• <b>Issues chưa giải quyết:</b> <code>${issuesDisplay}</code>`,
+        `• <b>BugSink Dashboard:</b> http://100.103.109.18:35800/issues/2/`,
+        ``,
+        `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
+      ].join("\n");
+    } else if (isKumaMode) {
       const dms = await getDmsState(env.WATCHDOG_KV);
       const kSeries = dms?.kuma?.series;
 
@@ -232,14 +407,28 @@ export async function handleTelegramCommand(
           `• <b>Khả dụng 24h:</b> <code>${dms?.kuma?.uptime_24h_percent ?? 100}%</code>`,
           ``,
           failedSection,
+          ``,
+          `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
         ].join("\n");
       } else {
+        // WE5: Dynamic failed events count instead of hardcoded 0
         chartUrl = generateKumaChartUrl(undefined, buffer);
+        const fails = dms?.kuma?.failed_events || [];
+        let failedSection = "• <b>Sự kiện lỗi:</b> <code>0 sự cố (100% OK)</code>";
+        if (fails.length > 0) {
+          const failLines = fails.slice(-5).map(
+            (f) => `  ⚠️ [${escapeHtml(f.time)}] ${escapeHtml(f.monitor_name)}: ${escapeHtml(f.msg)}`
+          );
+          failedSection = `• <b>Sự kiện lỗi (${fails.length} sự cố gần nhất):</b>\n${failLines.join("\n")}`;
+        }
+
         caption = [
           `<b>[BIỂU ĐỒ ĐỘ TRỄ UPTIME KUMA (ON-PREMISE)]</b>`,
           `Dữ liệu ${buffer.length} chu kỳ gần nhất từ HP node (chu kỳ 10m):`,
           `• Supabase DB vs Vercel API vs Internet Uplink.`,
-          `• <b>Sự kiện lỗi:</b> <code>0 sự cố</code>`,
+          failedSection,
+          ``,
+          `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
         ].join("\n");
       }
     } else if (isNodeMode) {
@@ -256,7 +445,7 @@ export async function handleTelegramCommand(
         `• <b>CPU Load Avg TB:</b> <code>${avgLoad}</code>`,
         `• <b>RAM sử dụng TB:</b> <code>${avgMem} MB / 7712 MB</code>`,
         ``,
-        `<i>(Mẹo: Gõ <code>/chart</code> để xem Cloud Latency | <code>/chart kuma</code> để xem 8h Kuma)</i>`,
+        `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
       ].join("\n");
     } else {
       // Cloud Performance: Edge API Latency vs Supabase DB Latency
@@ -275,7 +464,7 @@ export async function handleTelegramCommand(
         `• <b>Total API Latency TB:</b> <code>${avgLatency} ms</code> (Max: ${maxLatency} ms)`,
         dbLine,
         ``,
-        `<i>(Mẹo: Gõ <code>/chart node</code> để xem CPU & RAM HP Node | <code>/chart kuma</code> để xem 8h Kuma)</i>`,
+        `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
       ].filter(Boolean).join("\n");
     }
 
@@ -286,10 +475,11 @@ export async function handleTelegramCommand(
       await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, fallbackReply);
     }
   } else if (command === "/ping") {
+    // WE3: Distinctly separate network reachability from application status
     console.log(`[Commands] Executing /ping for chat ${chatId}`);
     const start = Date.now();
     let edgeLatency = 0;
-    let reachable = false;
+    let endpointStatus = "Unreachable (Connection Failed)";
 
     try {
       const probeRes = await fetch(target, {
@@ -298,32 +488,44 @@ export async function handleTelegramCommand(
         signal: AbortSignal.timeout(5000),
       });
       edgeLatency = Date.now() - start;
-      reachable = probeRes.ok;
+      if (probeRes.ok) {
+        endpointStatus = `Reachable (HTTP ${probeRes.status} OK)`;
+      } else {
+        endpointStatus = `Reached (HTTP ${probeRes.status} - App Degraded)`;
+      }
     } catch {
       edgeLatency = Date.now() - start;
+      endpointStatus = "Unreachable (Connection Failed)";
     }
 
     const reply = [
       `<b>[PONG] Cloud Watchdog Edge Worker</b>`,
       ``,
       `<b>Edge Status:</b> Online (Active)`,
-      `<b>Vercel Endpoint:</b> <code>${reachable ? "Reachable" : "Unreachable"}</code>`,
+      `<b>Vercel Endpoint:</b> <code>${endpointStatus}</code>`,
       `<b>Network Latency:</b> <code>${edgeLatency}ms</code>`,
-      `<b>Worker Timestamp:</b> <code>${new Date().toISOString()}</code>`,
+      `<b>Worker Timestamp:</b> <code>${formatGmt7String()}</code>`,
+      ``,
+      `💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node`,
     ].join("\n");
 
     await sendTelegramReply(env.TELEGRAM_BOT_TOKEN, chatId, reply);
   } else if (command === "/help") {
+    // UX6: Updated command catalogue with all new commands and aliases
     const reply = [
       `<b>[DANH MỤC LỆNH GIÁM SÁT WATCHDOG]</b>`,
       ``,
       `• <code>/status</code> - Báo cáo tổng thể hợp nhất (Cloud Vercel/Supabase + On-Premise DMS).`,
+      `• <code>/dms</code> - Xem nhanh trạng thái máy chủ On-Premise (HP Node) không cần probe cloud.`,
+      `• <code>/silence [phút]</code> - Tạm dừng gửi cảnh báo trong 5-240 phút (mặc định 30 phút).`,
       `• <code>/chart</code> - Biểu đồ hiệu năng Cloud (Độ trễ Edge API vs Supabase DB).`,
       `• <code>/chart node</code> - Biểu đồ tài nguyên máy chủ HP Node (CPU Load & RAM MB).`,
       `• <code>/chart kuma</code> - Biểu đồ độ trễ 8h Uptime Kuma & sự kiện lỗi Failed Events.`,
-      `• <code>/ping</code> - Đo độ trễ từ Cloudflare Edge đến Vercel API.`,
+      `• <code>/chart bugsink</code> - Biểu đồ theo dõi lỗi và sự kiện BugSink Issue Tracker.`,
+      `• <code>/ping</code> - Đo độ trễ từ Cloudflare Edge đến Vercel API & kiểm tra kết nối.`,
       `• <code>/help</code> - Hiển thị danh mục lệnh hỗ trợ.`,
       ``,
+      `<i>Aliases hỗ trợ: /chart_cloud, /chart_node, /chart_kuma, /chart_bugsink</i>`,
       `<i>Hệ thống tự động thăm dò và kiểm tra nhịp tim định kỳ mỗi 10 phút.</i>`,
     ].join("\n");
 

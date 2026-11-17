@@ -44,9 +44,9 @@ jobs:
           CURL_EXIT=${CURL_EXIT:-0}
 
           if [ $CURL_EXIT -ne 0 ]; then
-            echo "::warning::Cloud heartbeat probe failed with curl exit code $CURL_EXIT: $HTTP_RESPONSE"
+            echo "::error::Cloud heartbeat probe failed with curl exit code $CURL_EXIT: $HTTP_RESPONSE"
             echo "Note: If the deployed domain is not yet active, ensure APP_HEALTH_URL repository secret/variable is configured."
-            exit 0
+            exit 1
           fi
 
           # Extract body, status code, and latency
@@ -73,4 +73,21 @@ jobs:
           else
             echo "::error::Unexpected HTTP status $STATUS_CODE received from $TARGET"
             exit 1
+          fi
+
+      - name: Dispatch Telegram Failure Alert
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            MESSAGE="<b>[CRITICAL ALERT] Cloud Heartbeat Probe Failed!</b>%0A%0A<b>Workflow:</b> <code>${{ github.workflow }}</code>%0A<b>Run URL:</b> <a href=\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\">View Run #${{ github.run_id }}</a>%0A<b>Status:</b> <code>Health Probe Execution Failed</code>%0A%0A💡 Gõ /status để xem chi tiết | /dms để kiểm tra on-premise node"
+            curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}" \
+              -d "text=${MESSAGE}" \
+              -d "parse_mode=HTML" \
+              -d "disable_web_page_preview=true" || true
+          else
+            echo "Telegram credentials not configured in secrets. Skipping failure alert."
           fi

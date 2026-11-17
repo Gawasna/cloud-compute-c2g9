@@ -116,7 +116,7 @@ export function formatSupabaseWebhookAlert(payload: SupabaseWebhookPayload): str
 export async function evaluateSupabaseLatency(
   latencyMs: number,
   dbStatus: string | undefined,
-  kv?: { get: (k: string, t?: unknown) => Promise<unknown>; put: (k: string, v: string) => Promise<void> } | null,
+  kv?: { get: (k: string, t?: any) => Promise<any>; put: (k: string, v: string) => Promise<void> } | null,
   thresholdMs: number = 2500,
   recoveryThresholdMs: number = 1000
 ): Promise<SupabaseLatencyResult> {
@@ -169,10 +169,13 @@ export async function evaluateSupabaseLatency(
       };
     }
   } else {
+    // When latency is below thresholdMs and dbStatus is healthy:
+    // Reset consecutive_degraded counter so it never accumulates or stays stuck in gray zone or healthy state
+    state.consecutive_degraded = 0;
+
     const isHealthy = (dbStatus === "connected" || dbStatus === undefined) && latencyMs < recoveryThresholdMs;
     if (state.alerted_degraded && isHealthy) {
       state.alerted_degraded = false;
-      state.consecutive_degraded = 0;
       shouldAlert = true;
       isRecovery = true;
       alertPayload = {
@@ -191,9 +194,9 @@ export async function evaluateSupabaseLatency(
           `<i>Database performance and connectivity have been fully restored.</i>`,
         ].join("\n"),
       };
-    } else if (!state.alerted_degraded) {
-      state.consecutive_degraded = 0;
     }
+    // In gray zone (recoveryThresholdMs <= latencyMs <= thresholdMs):
+    // Remain silent without sending redundant alerts, awaiting genuine recovery (< recoveryThresholdMs).
   }
 
   state.last_latency_ms = latencyMs;
@@ -221,7 +224,8 @@ export async function evaluateSupabaseLatency(
  */
 export async function handleSupabaseWebhook(
   request: Request,
-  env: Record<string, unknown>
+  env: Record<string, unknown>,
+  ctx?: ExecutionContext
 ): Promise<Response> {
   const secret = (env.SUPABASE_WEBHOOK_SECRET || env.SUPABASE_SECRET_TOKEN) as string | undefined;
   if (!verifySupabaseSecret(request, secret)) {
@@ -247,24 +251,62 @@ export async function handleSupabaseWebhook(
     );
   }
 
+  // Rate limit: 1 alert / 10 phút (TTL 600s) per-table and per-action
+  const kv = env.WATCHDOG_KV as
+    | {
+        get: (k: string, t?: any) => Promise<any>;
+        put: (k: string, v: string, opts?: { expirationTtl?: number }) => Promise<void>;
+      }
+    | undefined;
+
+  const table = payload.table || "unknown";
+  const action = payload.type || "UNKNOWN";
+  const rateLimitKey = `supabase:webhook:ratelimit:${table}:${action}`;
+  const rateLimitKeyLower = `supabase:webhook:ratelimit:${table}:${action.toLowerCase()}`;
+
+  if (kv) {
+    try {
+      const existing = (await kv.get(rateLimitKey)) ?? (await kv.get(rateLimitKeyLower));
+      if (existing !== null && existing !== undefined) {
+        return new Response(
+          JSON.stringify({ ok: true, suppressed: true }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+      await kv.put(rateLimitKey, "1", { expirationTtl: 600 });
+      if (rateLimitKey !== rateLimitKeyLower) {
+        await kv.put(rateLimitKeyLower, "1", { expirationTtl: 600 });
+      }
+    } catch (err: unknown) {
+      console.error("[Supabase Webhook] Error checking KV rate limit:", err);
+    }
+  }
+
   const alertHtml = formatSupabaseWebhookAlert(payload);
 
-  const botToken = env.TELEGRAM_BOT_TOKEN;
-  const chatId = env.TELEGRAM_CHAT_ID;
+  const botToken = env.TELEGRAM_BOT_TOKEN as string | undefined;
+  const chatId = env.TELEGRAM_CHAT_ID as string | undefined;
   if (botToken && chatId) {
-    try {
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: alertHtml,
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-        }),
-      });
-    } catch (err: unknown) {
+    const fetchPromise = fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: alertHtml,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    }).catch((err: unknown) => {
       console.error("[Supabase Webhook] Failed to dispatch Telegram alert:", err);
+    });
+
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(fetchPromise);
+    } else {
+      await fetchPromise;
     }
   }
 
